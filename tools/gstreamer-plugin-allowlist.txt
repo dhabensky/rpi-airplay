@@ -1,0 +1,22 @@
+# GStreamer plugin basenames this project's pipeline actually needs.
+# One per line: <basename.so>  # <why>
+# Cross-referenced against PROGRESS.md and the live pipeline strings in
+# provisioning/files/etc/systemd/system/uxplay.service.
+libgstalsa.so           # alsasink (audio output)
+libgstapp.so            # appsrc (UxPlay feeds decoded frames in via appsrc)
+libgstaudioconvert.so   # audioconvert (audio pipeline)
+libgstaudioresample.so  # audioresample (audio pipeline)
+libgstautodetect.so     # autoaudiosink/autovideosink fallback paths in UxPlay
+libgstcoreelements.so   # queue, identity, capsfilter -- used directly in the pipeline (-vc identity)
+libgstdebug.so          # provides capssetter, used by UxPlay's own pipeline construction
+libgstkms.so            # kmssink (video output, force-modesetting=true)
+libgstlevel.so          # level (audio pipeline element UxPlay inserts for metering)
+libgstlibav.so          # avdec_h264/avdec_aac software fallback decoders
+libgstplayback.so       # playbin/decodebin -- pulled in by UxPlay even when not the active path
+libgsttypefindfunctions.so  # format detection, required by decodebin/playbin
+libgstvideo4linux2.so   # v4l2h264dec (hardware H.264 decode, -vd v4l2h264dec)
+libgstvideoconvertscale.so  # videoscale (in the pipeline between decoder and kmssink)
+libgstvideofilter.so    # base class several video elements depend on
+libgstvideoparsersbad.so   # h264parse (parses the incoming Annex-B stream before the decoder)
+libgstvideorate.so      # videorate, pulled in as a playbin/decodebin dependency
+libgstvolume.so         # volume (audio pipeline element UxPlay inserts for volume control)

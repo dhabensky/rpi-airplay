@@ -1,0 +1,12 @@
+# Disposable environment for computing the minimal GStreamer plugin closure
+# this project actually needs (see tools/vendor-gstreamer-closure.sh) --
+# NOT the runtime image itself. Same base-image pin as Dockerfile.uxplay-buildtest
+# so both draw from an identical Debian trixie snapshot.
+FROM debian@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-alsa \
+    gstreamer1.0-tools \
+    binutils dpkg \
+    && rm -rf /var/lib/apt/lists/*

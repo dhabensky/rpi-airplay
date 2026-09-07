@@ -1,0 +1,12 @@
+# WiFi country code, set here in case the access point does send one
+country=RU
+# Grant all members of group "netdev" permissions to configure WiFi, e.g. via wpa_cli or wpa_gui
+ctrl_interface=DIR=/run/wpa_supplicant GROUP=netdev
+# Allow wpa_cli/wpa_gui to overwrite this config file
+update_config=1
+network={
+	ssid="REDACTED"
+	scan_ssid=1
+	key_mgmt=WPA-PSK
+	psk=REDACTED
+}

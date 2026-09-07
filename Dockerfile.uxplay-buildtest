@@ -1,4 +1,8 @@
-FROM debian:trixie-slim
+# Pinned by digest, not the mutable "trixie-slim" tag, so the base image
+# content can't silently drift between builds (see tools/verify-reproducible-build.sh).
+# Re-pin deliberately (docker pull debian:trixie-slim && docker inspect
+# --format='{{index .RepoDigests 0}}' debian:trixie-slim) when a newer base is wanted.
+FROM debian@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git cmake build-essential pkg-config \
@@ -13,8 +17,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY UxPlay /src/UxPlay
 WORKDIR /src/UxPlay
+# SOURCE_DATE_EPOCH + -ffile-prefix-map make the build reproducible: without
+# them, embedded timestamps and the /src/UxPlay absolute build path would
+# make two otherwise-identical builds diverge byte-for-byte. Pinned to the
+# UxPlay submodule commit's own timestamp (not `date`), so it's a function of
+# the pinned source, not of when the build happened to run.
+ARG SOURCE_DATE_EPOCH=1788797385
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 RUN mkdir build && cd build && \
-    cmake .. -DNO_X11_DEPS=ON -DUSE_DNS_SD=1 && \
+    cmake .. -DNO_X11_DEPS=ON -DUSE_DNS_SD=1 \
+      -DCMAKE_C_FLAGS="-ffile-prefix-map=/src/UxPlay=." \
+      -DCMAKE_CXX_FLAGS="-ffile-prefix-map=/src/UxPlay=." && \
     make -j"$(nproc)" && \
     make install
 

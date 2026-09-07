@@ -16,17 +16,25 @@ echo "==> Installing packages"
 apt-get update
 apt-get install -y avahi-daemon ffmpeg gdb
 
-echo "==> Vendoring GStreamer runtime plugins (not available as trixie arm64 packages"
+echo "==> Vendoring GStreamer runtime (not available as trixie arm64 packages"
 echo "    without pulling gstreamer1.0-plugins-good/bad's full X11/Wayland/dbus/"
-echo "    PulseAudio closure -- see README.md)"
+echo "    PulseAudio closure -- see vendor/gstreamer-1.0-arm64-trixie/MANIFEST.md)"
+# plugins/ -> GStreamer's own plugin-scanner path, EXCEPT gst-plugin-scanner
+# itself, which lives one level up (see MANIFEST.md's "don't flatten"
+# note -- a prior manual extraction only ever did this half, silently
+# missing libs/ below, which happened to already be on the live Pi from an
+# undocumented earlier step and masked the gap).
 install -d /usr/lib/aarch64-linux-gnu/gstreamer-1.0
 install -m 0644 -t /usr/lib/aarch64-linux-gnu/gstreamer-1.0 \
   ../vendor/gstreamer-1.0-arm64-trixie/plugins/*.so
 install -d /usr/lib/aarch64-linux-gnu/gstreamer1.0/gstreamer-1.0
-install -m 0755 ../vendor/gstreamer-1.0-arm64-trixie/gst-plugin-scanner \
+install -m 0755 ../vendor/gstreamer-1.0-arm64-trixie/plugins/gst-plugin-scanner \
   /usr/lib/aarch64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner
-install -m 0644 ../vendor/gstreamer-1.0-arm64-trixie/liborc-0.4.so.0 \
-  /usr/lib/aarch64-linux-gnu/liborc-0.4.so.0
+# libs/ -> general shared libraries the plugins link against, installed
+# directly under the arch lib dir (not the plugin directory).
+install -d /usr/lib/aarch64-linux-gnu
+install -m 0644 -t /usr/lib/aarch64-linux-gnu \
+  ../vendor/gstreamer-1.0-arm64-trixie/libs/*
 ldconfig
 
 echo "==> Enabling the bcm2835 hardware H.264 decoder (DietPi blacklists it by default)"
@@ -48,6 +56,9 @@ echo "==> Installing the systemd unit"
 install -m 0644 files/etc/systemd/system/uxplay.service /etc/systemd/system/uxplay.service
 systemctl daemon-reload
 systemctl enable uxplay.service
+
+echo "==> Installing the uxrun A/V-sync tuning helper"
+install -m 0755 files/usr/local/bin/uxrun /usr/local/bin/uxrun
 
 cat <<'EOF'
 
