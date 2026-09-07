@@ -1,0 +1,21 @@
+FROM debian:trixie-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git cmake build-essential pkg-config \
+    libssl-dev libplist-dev \
+    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+    libavahi-compat-libdnssd-dev \
+    gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-alsa \
+    gstreamer1.0-tools \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY UxPlay /src/UxPlay
+WORKDIR /src/UxPlay
+RUN mkdir build && cd build && \
+    cmake .. -DNO_X11_DEPS=ON -DUSE_DNS_SD=1 && \
+    make -j"$(nproc)" && \
+    make install
+
+RUN uxplay -v 2>&1 | head -5 || uxplay -h 2>&1 | head -5

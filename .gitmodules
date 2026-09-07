@@ -1,0 +1,4 @@
+[submodule "UxPlay"]
+	path = UxPlay
+	url = git@github.com:dhabensky/UxPlay.git
+	branch = dhabensky-dev

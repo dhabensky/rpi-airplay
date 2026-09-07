@@ -1,0 +1,36 @@
+# Build outputs / deployment artifacts (rebuild via Dockerfile.uxplay-buildtest
+# or provisioning/deploy.sh instead of committing binaries)
+uxplay_debug
+capx
+capx_mac
+*.o
+
+# Scratch build directories from ad-hoc local iterations (not the Dockerfile
+# build, which is reproducible from source)
+build/
+build2/
+build3/
+build_debug/
+build_final/
+build_patched/
+build_patched2/
+build_queuefix/
+build_stable/
+
+# Superseded by vendor/gstreamer-1.0-arm64-trixie/ (see its MANIFEST.md) --
+# this was the ad-hoc, unscripted predecessor of that directory
+gst_fix/
+closure_export/
+
+# Large diagnostic dumps / captured test sessions -- useful for a specific
+# debugging session, not for the repo (can be multi-MB to multi-GB)
+*.cap
+*.h264
+planes.txt
+
+# Full DietPi disk image -- 1GB+, embeds this network's WiFi credentials,
+# and isn't the reproducible artifact (see README.md "Known gaps" #2)
+*.img
+
+# macOS
+.DS_Store
