@@ -30,14 +30,18 @@ mkdir -p "$work"
 echo "==> Copying root dir into container-local storage (avoids the chroot/bind-mount issue)"
 cp -a "$rootdir_in/." "$work/"
 
-echo "==> Installing packages (avahi-daemon, ffmpeg, gdb -- the only 3 manual"
-echo "    additions confirmed on the live Pi beyond DietPi/RPi defaults)"
-# Verified empirically: these 3 packages' postinst scripts run cleanly with
+echo "==> Installing packages (avahi-daemon, ffmpeg, gdb, openssh-server --"
+echo "    found via 'make verify' Tier A, not originally in this script:"
+echo "    the live Pi runs OpenSSH, not DietPi's default dropbear -- that's"
+echo "    how this whole project has been managed over SSH throughout)"
+# Verified empirically: these packages' postinst scripts run cleanly with
 # no /proc mounted (just the standard, harmless "invoke-rc.d: could not
 # determine current runlevel" chroot warning, exit 0) -- so no mount(),
 # no CAP_SYS_ADMIN, no privilege needed at all for this step.
 cp /etc/resolv.conf "$work/etc/resolv.conf"
-chroot "$work" bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends avahi-daemon ffmpeg gdb'
+chroot "$work" bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends avahi-daemon ffmpeg gdb openssh-server'
+chroot "$work" bash -c 'DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq dropbear dropbear-bin 2>/dev/null || true'
+chroot "$work" bash -c 'apt-get autoremove -y -qq'
 chroot "$work" bash -c 'apt-get clean'
 rm -rf "$work/var/lib/apt/lists/"*
 

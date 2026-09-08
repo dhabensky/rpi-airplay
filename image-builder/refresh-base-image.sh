@@ -2,31 +2,44 @@
 # Deliberate, rare action (run by hand via `make refresh-base-image`, never
 # automatically): downloads the CURRENT DietPi image for RPi 2/3/4 arm64
 # trixie, verifies it against DietPi's own published sha256 + PGP
-# signature, extracts its exact DietPi version (for the release tag), and
-# re-publishes that exact verified blob as a GitHub Release asset on
-# dhabensky/rpi-airplay -- since DietPi itself has no versioned archive
-# (dietpi.com/downloads/images/ overwrites the same generic filename each
-# release; confirmed via web research, and via their own community forum's
-# repeated "where do I get an older version" threads). This establishes a
-# stable, versioned, checksum-verifiable pin that routine builds
-# (image-builder/fetch-base.sh) depend on instead of that mutable page.
+# signature, and stores it in image-builder/dietpi-base/ under Git LFS --
+# since DietPi itself has no versioned archive (dietpi.com/downloads/images/
+# overwrites the same generic filename each release; confirmed via web
+# research, and via their own community forum's repeated "where do I get
+# an older version" threads), this project becomes the versioned source
+# instead.
 #
-# Requires: gh (authenticated: `gh auth login`), gpg.
+# Git LFS rather than a GitHub Release: a given base image is likely to be
+# reused across many of this project's own commits/releases, so its
+# lifecycle shouldn't be tied to any one release tag -- it's just a
+# tracked, versioned file in the repo like anything else, fetched via the
+# same `git clone`/`git lfs pull` this project already uses over SSH (no
+# separate GitHub API/token to manage).
+#
+# Requires: git-lfs (`brew install git-lfs && git lfs install`), gpg.
+# Does NOT commit or push -- review `git status`/`git diff --stat` and
+# commit explicitly.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 URL="https://dietpi.com/downloads/images/DietPi_RPi234-ARMv8-Trixie.img.xz"
 KEYRING_URL="https://github.com/MichaIng.gpg"
-REPO="dhabensky/rpi-airplay"
+DEST_DIR="image-builder/dietpi-base"
 
-if ! command -v gh >/dev/null; then
-  echo "ERROR: gh (GitHub CLI) is required to publish a release asset." >&2
-  echo "  brew install gh && gh auth login" >&2
-  exit 1
-fi
-gh auth status >/dev/null || { echo "ERROR: gh is not authenticated -- run 'gh auth login'" >&2; exit 1; }
+command -v git-lfs >/dev/null || { echo "ERROR: git-lfs not installed (brew install git-lfs)" >&2; exit 1; }
+git lfs env >/dev/null 2>&1 || { echo "ERROR: git-lfs not initialized (git lfs install)" >&2; exit 1; }
 
-work=$(mktemp -d)
+# This script's temp dir gets bind-mounted into `docker run -v` calls below
+# -- must live under $PWD (or elsewhere under $HOME), NOT the default
+# mktemp location ($TMPDIR, typically /var/folders/.../T on macOS, or
+# plain /tmp): colima's default config only mounts $HOME into its VM, so a
+# bind-mount of a /tmp path silently shows up as an empty directory inside
+# the container (verified empirically -- not a chroot/execute-bit issue as
+# an earlier, now-corrected comment in customize-root.sh claimed; the real
+# cause is this mount-scope gap, hit here via a completely different
+# symptom: a version-extraction step silently reading nothing).
+mkdir -p build/.tmp
+work=$(mktemp -d build/.tmp/refresh-base.XXXXXX)
 trap 'rm -rf "$work"' EXIT
 
 echo "==> Downloading $URL"
@@ -34,45 +47,55 @@ curl -sSL -o "$work/dietpi.img.xz" "$URL"
 curl -sSL -o "$work/dietpi.img.xz.sha256" "$URL.sha256"
 curl -sSL -o "$work/dietpi.img.xz.asc" "$URL.asc" || echo "  (no .asc signature published for this image, sha256-only)"
 
-echo "==> Verifying sha256"
+echo "==> Verifying sha256 against DietPi's own published value"
 ( cd "$work" && sha256sum -c <(awk '{print $1"  dietpi.img.xz"}' dietpi.img.xz.sha256) )
 
 if [ -f "$work/dietpi.img.xz.asc" ]; then
   echo "==> Verifying PGP signature against DietPi's published keyring"
-  curl -sSL -o "$work/dietpi.gpg" "$KEYRING_URL"
-  gpg --no-default-keyring --keyring "$work/dietpi.gpg" --verify "$work/dietpi.img.xz.asc" "$work/dietpi.img.xz"
+  # GitHub's <user>.gpg endpoint serves an ASCII-armored key block, not a
+  # raw gpg keyring database -- needs an actual import into a scratch
+  # keyring, not just pointing --keyring at the downloaded file directly.
+  curl -sSL -o "$work/dietpi.asc" "$KEYRING_URL"
+  mkdir -m 700 "$work/gnupg"
+  GNUPGHOME="$work/gnupg" gpg --import "$work/dietpi.asc"
+  GNUPGHOME="$work/gnupg" gpg --verify "$work/dietpi.img.xz.asc" "$work/dietpi.img.xz"
 fi
 
-echo "==> Extracting DietPi version (for the release tag)"
+echo "==> Extracting DietPi version (for the stored filename)"
 docker build -q -t rpi-airplay-image-builder -f Dockerfile.image-builder . >/dev/null
 xz -dk "$work/dietpi.img.xz" -c > "$work/dietpi.img"
-docker run --rm -v "$work":/w rpi-airplay-image-builder \
-  bash /w/../image-builder/extract-partitions.sh /w/dietpi.img /w/peek-boot /w/peek-root 2>/dev/null || true
+docker run --rm -v "$work":/w -v "$PWD/image-builder":/image-builder:ro rpi-airplay-image-builder \
+  bash /image-builder/extract-partitions.sh /w/dietpi.img /w/peek-boot /w/peek-root >/dev/null 2>&1 || true
 # .version lives in the root partition at /boot/dietpi/.version (DietPi's
 # own housekeeping path, distinct from /boot/firmware -- the FAT32 RPi
-# bootloader partition, which extract-partitions.sh calls "boot").
-VERSION=$(docker run --rm -v "$work":/w rpi-airplay-image-builder \
-  cat /w/peek-root/boot/dietpi/.version 2>/dev/null | tr '\n' '-' | sed 's/-$//' || echo "unknown")
-DIETPI_VER="dietpi-base-v${VERSION:-unknown}-$(date +%Y%m%d)"
-echo "  version tag: $DIETPI_VER"
-
+# bootloader partition, which extract-partitions.sh calls "boot"). It's
+# shell-variable-assignment format (G_DIETPI_VERSION_CORE=10 etc.), not
+# plain text -- source it and read the 3 fields directly.
+VERSION=$(docker run --rm -v "$work":/w rpi-airplay-image-builder bash -c '
+  . /w/peek-root/boot/dietpi/.version 2>/dev/null
+  echo "${G_DIETPI_VERSION_CORE}.${G_DIETPI_VERSION_SUB}.${G_DIETPI_VERSION_RC}"
+' || echo "unknown")
+FILENAME="DietPi_RPi234-ARMv8-Trixie-v${VERSION:-unknown}.img.xz"
 SHA256=$(sha256sum "$work/dietpi.img.xz" | cut -d' ' -f1)
 
-echo "==> Publishing GitHub Release $DIETPI_VER on $REPO"
-gh release create "$DIETPI_VER" "$work/dietpi.img.xz" \
-  --repo "$REPO" \
-  --title "DietPi base image: $DIETPI_VER" \
-  --notes "Re-hosted, verified copy of $URL (sha256-and-PGP-checked against DietPi's own published values at download time). See image-builder/BASE-IMAGE.env and vendor/gstreamer-1.0-arm64-trixie/MANIFEST.md for why this project vendors its own copy instead of depending on dietpi.com's mutable download page."
+echo "==> Storing $DEST_DIR/$FILENAME"
+mkdir -p "$DEST_DIR"
+if [ -f "$DEST_DIR/$FILENAME" ] && [ "$(sha256sum "$DEST_DIR/$FILENAME" | cut -d' ' -f1)" = "$SHA256" ]; then
+  echo "  (identical to what's already pinned -- nothing to do)"
+else
+  cp "$work/dietpi.img.xz" "$DEST_DIR/$FILENAME"
+fi
+echo "$SHA256  $FILENAME" > "$DEST_DIR/$FILENAME.sha256"
 
-RELEASE_URL="https://github.com/$REPO/releases/download/$DIETPI_VER/dietpi.img.xz"
 cat > image-builder/BASE-IMAGE.env <<EOF
 # Auto-generated by image-builder/refresh-base-image.sh -- do not edit by hand.
-# Pinned, versioned copy of DietPi's RPi 2/3/4 arm64 trixie image, re-hosted
-# because DietPi itself has no versioned archive (see this file's generator
-# script for the full rationale). Regenerate via 'make refresh-base-image'.
-BASE_IMAGE_URL="$RELEASE_URL"
-BASE_IMAGE_SHA256="$SHA256"
+# Points at the currently-pinned base image, stored under Git LFS at
+# image-builder/dietpi-base/ (see that script for the full rationale).
+BASE_IMAGE_FILE="$FILENAME"
 BASE_IMAGE_DIETPI_VERSION="$VERSION"
 EOF
 
-echo "==> Pinned. image-builder/BASE-IMAGE.env updated -- commit it."
+echo
+echo "==> Pinned DietPi v${VERSION} as $DEST_DIR/$FILENAME"
+echo "    Review and commit: git add .gitattributes $DEST_DIR image-builder/BASE-IMAGE.env"
+echo "    (not committed automatically)"

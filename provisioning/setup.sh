@@ -14,7 +14,12 @@ cd "$(dirname "$0")"
 
 echo "==> Installing packages"
 apt-get update
-apt-get install -y avahi-daemon ffmpeg gdb
+apt-get install -y avahi-daemon ffmpeg gdb openssh-server
+# DietPi defaults to dropbear; this Pi has always been managed over OpenSSH
+# instead (found via 'make verify' Tier A against the image-builder path,
+# not originally documented here).
+apt-get purge -y dropbear dropbear-bin 2>/dev/null || true
+apt-get autoremove -y
 
 echo "==> Vendoring GStreamer runtime (not available as trixie arm64 packages"
 echo "    without pulling gstreamer1.0-plugins-good/bad's full X11/Wayland/dbus/"
