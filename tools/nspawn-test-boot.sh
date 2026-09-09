@@ -72,16 +72,33 @@ sleep 1
 fail=0
 echo
 echo "=== service status ==="
-# dropbear.service failing here ("Address already in use" on port 22) is
+# ssh.service failing here ("Address already in use" on port 22) is
 # EXPECTED and not a regression: nspawn shares the host's (colima VM's)
 # network namespace by default, and colima's own sshd -- what `colima ssh`
 # itself connects through -- already owns port 22 there. The real Pi has
 # its own isolated network stack and doesn't hit this; already confirmed
 # separately (a real SSH session to the actual device works).
-for svc in dropbear.service avahi-daemon.service uxplay.service; do
+for svc in ssh.service avahi-daemon.service uxplay.service; do
   state=$(sudo systemctl -M "$MACHINE" is-active "$svc" 2>&1 || true)
   echo "$svc: $state"
 done
+
+# Host-key generation is checked separately from ssh.service's own
+# active/failed state above, since nspawn's shared-port conflict (see
+# comment above) means ssh.service can legitimately fail here for a
+# reason that has nothing to do with host keys. This catches a gross
+# regression in the sshd-keygen.service.d override itself (bad syntax,
+# wrong unit name, etc.) -- it can NOT catch the specific bug that override
+# exists to fix (DietPi's first-boot resize+reboot leaving
+# ConditionFirstBoot=yes permanently false), since that only manifests
+# across two real kernel boots, and nspawn only ever boots this ephemeral
+# volume once. That interaction can only be verified on real hardware.
+if sudo systemd-run -M "$MACHINE" --wait --pipe test -f /etc/ssh/ssh_host_rsa_key >/dev/null 2>&1; then
+  echo "PASS: sshd host keys generated"
+else
+  echo "FAIL: sshd host keys NOT generated -- sshd-keygen.service.d override is broken"
+  fail=1
+fi
 
 # uxplay.service is EXPECTED to end up in auto-restart/failed here -- there's
 # no real VC4 GPU or V4L2 hardware decoder in this environment. What matters

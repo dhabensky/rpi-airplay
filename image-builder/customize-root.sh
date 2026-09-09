@@ -136,6 +136,27 @@ PermitRootLogin yes
 PasswordAuthentication yes
 EOF
 
+echo "==> Fixing sshd host-key generation to survive DietPi's first-boot resize+reboot"
+# sshd-keygen.service (generates the host keys sshd needs to bind at all)
+# ships with ConditionFirstBoot=yes -- a strict systemd one-shot condition
+# tied to /etc/machine-id being empty at that exact kernel boot. DietPi's
+# own first-boot flow does a filesystem resize + automatic reboot before
+# most services (including this one) ever get a chance to run; by the
+# *second* kernel boot systemd has already written a real machine-id
+# (persisted across the reboot), so ConditionFirstBoot=yes evaluates false
+# forever -- host keys never get generated, sshd can never bind, and every
+# connection gets refused permanently. Confirmed empirically: a freshly
+# flashed, otherwise-working image never brought up sshd at all. Override
+# the trigger to be based on whether the keys actually exist instead of a
+# one-shot boot counter, so it fires correctly no matter which kernel boot
+# ssh.service first actually starts on.
+install -d "$work/etc/systemd/system/sshd-keygen.service.d"
+cat > "$work/etc/systemd/system/sshd-keygen.service.d/override.conf" <<'EOF'
+[Unit]
+ConditionFirstBoot=
+ConditionPathExists=!/etc/ssh/ssh_host_rsa_key
+EOF
+
 echo "==> Installing vendored GStreamer runtime"
 install -d "$work/usr/lib/aarch64-linux-gnu/gstreamer-1.0"
 install -m 0644 -t "$work/usr/lib/aarch64-linux-gnu/gstreamer-1.0" "$vendor/plugins/"*.so
