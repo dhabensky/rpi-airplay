@@ -5,42 +5,66 @@
 # machine-id/ssh host keys. Meant to run inside the image-builder container
 # (Dockerfile.image-builder).
 #
-# IMPORTANT: chroot-ing into a directory reached via a macOS Docker Desktop
-# bind-mount (`-v $HOST_PATH:/x`) fails opaquely ("No such file or
-# directory" on a binary that demonstrably exists) -- verified empirically,
-# not a capability/privilege issue (CAP_SYS_CHROOT is present; chrooting
-# into the exact same content copied into the container's own filesystem
-# works fine). So: copy the input root dir into container-local storage
-# first, do all chroot work there, then copy the result back out. Costs an
-# extra copy of the rootfs (~a few hundred MB) but sidesteps the issue
-# entirely regardless of whether the caller's paths are bind-mounted.
+# <root-dir> must be a Docker named volume mount, NOT a macOS host
+# bind-mount (`-v $HOST_PATH:/x`): the virtiofs bridge macOS Docker/colima
+# uses for host bind-mounts silently discards non-root chown() calls (the
+# daemon performing the actual filesystem op on the Mac side runs as your
+# regular unprivileged macOS user, which can't chown to arbitrary UIDs on
+# the real host filesystem) -- confirmed empirically, including a bare
+# `chown` on such a path returning success but not persisting. Every
+# non-root ownership set in this script (uxplay:uxplay, root:systemd-journal)
+# would be silently flattened to root:root by the time build-image.sh reads
+# it back. Named volumes are backed by the colima VM's own filesystem, not
+# shared via virtiofs, so chroot/chown work normally there -- verified via
+# `debugfs rdump` correctly preserving /etc/shadow's root:shadow ownership
+# when extracted to container-local storage vs. losing it on a bind mount.
+# (This also means this directory generally isn't `ls`-able directly from
+# the host anymore -- inspect it via `docker run -v <volume>:/x ... find/stat`.)
 #
 # Usage: image-builder/customize-root.sh <root-dir> <vendor-gstreamer-dir> \
 #          <uxplay-debug-binary> <provisioning-files-dir>
 set -euo pipefail
 
-rootdir_in="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <provisioning-files-dir>}"
+work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <provisioning-files-dir>}"
 vendor="${2:?}"
 uxplay_bin="${3:?}"
 provfiles="${4:?}"
 
-work=/tmp/customize-root-work
-rm -rf "$work"
-mkdir -p "$work"
-echo "==> Copying root dir into container-local storage (avoids the chroot/bind-mount issue)"
-cp -a "$rootdir_in/." "$work/"
-
-echo "==> Installing packages (avahi-daemon, ffmpeg, gdb, openssh-server --"
-echo "    found via 'make verify' Tier A, not originally in this script:"
-echo "    the live Pi runs OpenSSH, not DietPi's default dropbear -- that's"
-echo "    how this whole project has been managed over SSH throughout)"
+echo "==> Installing packages (avahi-daemon, ffmpeg, gdb, libavahi-compat-libdnssd1, libplist-2.0-4, tcpdump)"
+# libavahi-compat-libdnssd1: NOT optional. lib/CMakeLists.txt links `airplay`
+# directly against avahi-compat-libdns_sd (libdns_sd.so.1) at build time
+# (-DUSE_DNS_SD=1); confirmed via `readelf -d uxplay_debug | grep NEEDED` --
+# it's a real DT_NEEDED entry, so uxplay_debug won't even start without it.
+# An earlier ldd-based check wrongly called this unneeded cruft -- it grepped
+# ldd's output for the literal string "avahi" and missed "libdns_sd.so.1",
+# which doesn't contain that substring. libavahi-client3 comes along
+# transitively as libavahi-compat-libdnssd1's own dependency.
+# libplist-2.0-4: ALSO not optional and found the same way ldd/dpkg both
+# missed it -- it's a direct link-time dependency of uxplay_debug itself
+# (not a GStreamer plugin, so tools/vendor-gstreamer-closure.sh's ldd walk,
+# which only starts from plugin .so files, never covers it), and it was
+# never dpkg-installed on the live Pi either (no Tier A diff), so this was a
+# silent, untracked manual file placement -- invisible in Tier B's own
+# output too, since a missing file just inflates the "golden-only paths"
+# aggregate count without ever being listed individually. Only found by
+# actually trying to run the binary (systemd-nspawn boot test, see
+# REBUILD-STATUS.md) -- "error while loading shared libraries:
+# libplist-2.0.so.4: cannot open shared object file".
+# tcpdump: genuinely useful for AirPlay protocol debugging (see PROGRESS.md's
+# tcpdump-replay experiments), not incidental cruft from an old session --
+# kept intentionally.
+# dropbear (DietPi's default) is left as-is here -- this project's actual SSH
+# usage on the live Pi (checked against sshd_config + auth log) is plain
+# password auth + remote command execution only, no sftp/scp/X11-forwarding/
+# ProxyJump/key-based auth ever used, so dropbear fully covers it. openssh
+# was installed here once as a Tier A "fix" without checking whether it was
+# actually needed -- reverted.
 # Verified empirically: these packages' postinst scripts run cleanly with
 # no /proc mounted (just the standard, harmless "invoke-rc.d: could not
 # determine current runlevel" chroot warning, exit 0) -- so no mount(),
 # no CAP_SYS_ADMIN, no privilege needed at all for this step.
 cp /etc/resolv.conf "$work/etc/resolv.conf"
-chroot "$work" bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends avahi-daemon ffmpeg gdb openssh-server'
-chroot "$work" bash -c 'DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq dropbear dropbear-bin 2>/dev/null || true'
+chroot "$work" bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends avahi-daemon ffmpeg gdb libavahi-compat-libdnssd1 libplist-2.0-4 tcpdump'
 chroot "$work" bash -c 'apt-get autoremove -y -qq'
 chroot "$work" bash -c 'apt-get clean'
 rm -rf "$work/var/lib/apt/lists/"*
@@ -83,6 +107,15 @@ mkdir -p "$work/etc/systemd/system/multi-user.target.wants"
 ln -sf /etc/systemd/system/uxplay.service \
   "$work/etc/systemd/system/multi-user.target.wants/uxplay.service"
 
+echo "==> Enabling persistent journald logging (DietPi default is volatile --"
+echo "    /run tmpfs only, wiped on power-off -- learned the hard way when a"
+echo "    first-boot's console errors turned out to be unrecoverable from the"
+echo "    card afterwards)"
+# chroot for ownership: "systemd-journal" only resolves against the
+# target's /etc/group, not the outer container's (same class of bug as the
+# uxplay user above).
+chroot "$work" install -d -m 2755 -o root -g systemd-journal /var/log/journal
+
 echo "==> Trimming firmware to brcm/cypress (this Pi's actual WiFi/BT chip)"
 if [ -d "$work/usr/lib/firmware" ]; then
   find "$work/usr/lib/firmware" -mindepth 1 -maxdepth 1 \
@@ -100,8 +133,4 @@ echo "    verify this doesn't fight DietPi's own first-boot identity regen)"
 : > "$work/etc/machine-id" || true
 rm -f "$work/etc/ssh/ssh_host_"*_key*
 
-echo "==> Copying customized root back out"
-rm -rf "${rootdir_in:?}"/*
-cp -a "$work/." "$rootdir_in/"
-rm -rf "$work"
-echo "Customization complete: $rootdir_in"
+echo "Customization complete: $work"

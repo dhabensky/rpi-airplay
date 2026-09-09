@@ -31,6 +31,7 @@ dd if="$img" of="$work/boot.raw" bs=512 skip="$P1_START" count="$P1_SIZE" conv=n
 dd if="$img" of="$work/root.raw" bs=512 skip="$P2_START" count="$P2_SIZE" conv=notrunc status=none
 
 mkdir -p "$outboot" "$outroot"
+rm -rf "${outboot:?}"/* "${outroot:?}"/*
 mcopy -s -i "$work/boot.raw" ::/ "$outboot/"
 debugfs -R "rdump / $outroot" "$work/root.raw" >/dev/null
 

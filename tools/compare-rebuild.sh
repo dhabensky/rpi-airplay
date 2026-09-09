@@ -58,6 +58,38 @@ if [ "${1:-}" = "--in-container" ]; then
   echo "   package version bumps; see REBUILD-STATUS.md accepted-delta notes, not auto-failed here)"
 
   echo
+  echo "=== TIER B (boot partition, minus known macOS-mount junk) ==="
+  # Previously never checked at all -- config.txt/cmdline.txt/dietpi.txt
+  # customizations that were only ever hand-applied on the live Pi (never
+  # scripted) went completely unnoticed here for the whole project until
+  # caught by an actual real-hardware boot. golden's own boot manifest
+  # includes .Spotlight-V100/.fseventsd/etc. from an earlier Mac-mount of
+  # this same card (see README's flashing section) -- filtered inline here
+  # rather than folding boot-partition paths into EXCLUDE-LIST.md's
+  # root-partition-scoped, absolute-path format.
+  ( cd "$work/boot" && find . -type f \
+      -not -path './.Spotlight-V100/*' -not -path './.fseventsd/*' \
+      -not -path './.Trashes/*' -not -name '.DS_Store' -not -name '._*' \
+      -exec sha256sum {} + 2>/dev/null | sort -k2 ) \
+    > "$work/candidate-boot-filetree.sha256" || true
+  sed -E 's#^([0-9a-f]+)  /boot/firmware/#\1  ./#' "$golden/filetree-manifest-boot.sha256" \
+    | grep -Ev '  \./(\.Spotlight-V100|\.fseventsd|\.Trashes)/|  \./(\.DS_Store|\._)' \
+    | sort -k2 > "$work/golden-boot-filetree.sha256"
+  join -j2 -o 1.1,2.1,0 <(sort -k2 "$work/golden-boot-filetree.sha256") <(sort -k2 "$work/candidate-boot-filetree.sha256") \
+    | awk '{if ($1!=$2) print}' > "$work/tierb-boot-mismatches.txt" || true
+  boot_mismatch_count=$(wc -l < "$work/tierb-boot-mismatches.txt" | tr -d ' ')
+  boot_golden_only=$(comm -23 <(awk '{print $2}' "$work/golden-boot-filetree.sha256" | sort) <(awk '{print $2}' "$work/candidate-boot-filetree.sha256" | sort) | wc -l | tr -d ' ')
+  boot_candidate_only=$(comm -13 <(awk '{print $2}' "$work/golden-boot-filetree.sha256" | sort) <(awk '{print $2}' "$work/candidate-boot-filetree.sha256" | sort) | wc -l | tr -d ' ')
+  if [ "$boot_mismatch_count" = "0" ]; then
+    echo "PASS: all $(wc -l < "$work/candidate-boot-filetree.sha256" | tr -d ' ') shared boot files match content"
+  else
+    echo "DIFF: $boot_mismatch_count boot files differ in content on shared paths:"
+    while IFS=' ' read -r _ _ path; do echo "  $path"; done < "$work/tierb-boot-mismatches.txt"
+    cp "$work/tierb-boot-mismatches.txt" build/compare-tierb-boot-mismatches.txt
+  fi
+  echo "  (golden-only paths: $boot_golden_only, candidate-only paths: $boot_candidate_only)"
+
+  echo
   echo "=== TIER C: binary-exact (uxplay_debug + vendor GStreamer) ==="
   cand_uxplay_sha=$(sha256sum "$work/root/usr/local/bin/uxplay_debug" | cut -d' ' -f1)
   golden_uxplay_sha=$(awk '{print $1}' "$golden/uxplay_debug.sha256")

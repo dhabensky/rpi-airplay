@@ -14,11 +14,35 @@ cd "$(dirname "$0")"
 
 echo "==> Installing packages"
 apt-get update
-apt-get install -y avahi-daemon ffmpeg gdb openssh-server
-# DietPi defaults to dropbear; this Pi has always been managed over OpenSSH
-# instead (found via 'make verify' Tier A against the image-builder path,
-# not originally documented here).
-apt-get purge -y dropbear dropbear-bin 2>/dev/null || true
+# libavahi-compat-libdnssd1: NOT optional -- UxPlay is built with
+# -DUSE_DNS_SD=1 and lib/CMakeLists.txt links `airplay` directly against
+# avahi-compat-libdns_sd (libdns_sd.so.1) at build time; confirmed via
+# `readelf -d uxplay_debug | grep NEEDED`. Without it the binary won't even
+# start (missing shared library). An earlier ldd-based check wrongly
+# concluded this was unneeded -- it grepped ldd's output for the literal
+# string "avahi" and missed "libdns_sd.so.1", which doesn't contain that
+# substring. libavahi-client3 comes along as libavahi-compat-libdnssd1's own
+# dependency.
+# libplist-2.0-4: ALSO not optional, found the same way both ldd and dpkg
+# missed it -- a direct link-time dependency of uxplay_debug itself (not a
+# GStreamer plugin, so vendor-gstreamer-closure.sh's ldd walk never covers
+# it), never dpkg-installed here either, so it was a silent untracked file.
+# Only found by an actual systemd-nspawn boot test (see REBUILD-STATUS.md).
+# tcpdump: genuinely useful for AirPlay protocol debugging (see PROGRESS.md's
+# tcpdump-replay experiments), not incidental cruft -- kept intentionally.
+apt-get install -y avahi-daemon ffmpeg gdb libavahi-compat-libdnssd1 libplist-2.0-4 tcpdump
+# DietPi defaults to dropbear; this project's actual SSH usage (checked
+# against the live Pi's sshd_config + auth log) is plain password auth and
+# remote command execution only -- no sftp/scp, no X11 forwarding, no
+# ProxyJump, no key-based auth ever used -- so dropbear fully covers it.
+# openssh-server was installed once as a 'fix' for a Tier A diff without
+# checking whether it was actually needed; reverted back to DietPi's default.
+# Install dropbear BEFORE purging openssh -- if this script runs over an
+# existing openssh-only SSH session (as it would on the live Pi today),
+# purging openssh first would cut off remote access before dropbear is
+# there to take over.
+apt-get install -y dropbear dropbear-bin
+apt-get purge -y openssh-server openssh-client openssh-sftp-server 2>/dev/null || true
 apt-get autoremove -y
 
 echo "==> Vendoring GStreamer runtime (not available as trixie arm64 packages"
@@ -41,6 +65,10 @@ install -d /usr/lib/aarch64-linux-gnu
 install -m 0644 -t /usr/lib/aarch64-linux-gnu \
   ../vendor/gstreamer-1.0-arm64-trixie/libs/*
 ldconfig
+
+echo "==> Enabling persistent journald logging (DietPi default is volatile --"
+echo "    /run tmpfs only, wiped on power-off)"
+install -d -m 2755 -o root -g systemd-journal /var/log/journal
 
 echo "==> Enabling the bcm2835 hardware H.264 decoder (DietPi blacklists it by default)"
 rm -f /etc/modprobe.d/dietpi-disable_rpi_codec.conf

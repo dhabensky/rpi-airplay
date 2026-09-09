@@ -32,5 +32,11 @@ planes.txt
 # and isn't the reproducible artifact (see README.md "Known gaps" #2)
 *.img
 
+# Live-Pi SD card rollback backups + scratch extractions used while
+# verifying a flash -- multi-GB, personal/local safety copies, not
+# reproducible artifacts (the actual reproducible artifact is build/
+# rpi-airplay.img.xz, produced fresh by `make image`)
+golden-reference/sdcard-backups/
+
 # macOS
 .DS_Store
