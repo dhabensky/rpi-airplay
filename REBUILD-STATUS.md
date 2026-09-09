@@ -796,3 +796,97 @@ fixed along the way: `dropbear.service` reliably fails inside nspawn with
 nspawn shares the host's network namespace by default, and colima's own
 sshd (what `colima ssh` itself uses) already owns that port there; the
 real Pi has its own isolated network stack and doesn't hit this.
+
+## 2026-09-09T06:00:43Z
+- golden-reference snapshot: `golden-reference/snapshots/2026-09-07/`
+- built image: `build/rpi-airplay.img` (5df479027f09...)
+- UxPlay submodule commit: `797abb2`
+```
+debugfs 1.47.2 (1-Jan-2025)
+Extracted boot partition -> /tmp/compare-work/boot (422 files)
+Extracted root partition -> /tmp/compare-work/root (13287 files)
+=== TIER A: package manifest ===
+DIFF: package selections differ (- golden, + candidate):
+2d1
+< alsa-utils					install
+81d79
+< libatopology2t64:arm64				install
+139,141d136
+< libdrm-etnaviv1:arm64				install
+< libdrm-tegra0:arm64				install
+< libdrm-tests					install
+154d148
+< libfftw3-single3:arm64				install
+250a245
+> libplist-2.0-4:arm64				install
+
+=== TIER B: file-tree content (root partition, minus EXCLUDE-LIST.md) ===
+DIFF: 131 files differ in content on shared paths (see build/compare-tierb-mismatches.txt)
+  (golden-only paths: 1612, candidate-only paths: 12 -- expected for routine
+   package version bumps; see REBUILD-STATUS.md accepted-delta notes, not auto-failed here)
+
+=== TIER B (boot partition, minus known macOS-mount junk) ===
+DIFF: 2 boot files differ in content on shared paths:
+  ./dietpi-wifi.txt
+  ./dietpi.txt
+  (golden-only paths: 0, candidate-only paths: 0)
+
+=== TIER C: binary-exact (uxplay_debug + vendor GStreamer) ===
+DIFF: uxplay_debug differs (golden=e567a903fccae13bf0ef0e6b6145d9e60a538bf7e00f08cec7606036b1533793 candidate=23a217530b51bda11d7ce0e8d3f0c490ad78294707797ba15384d2adad8129bd) --
+  expected ONLY if the UxPlay submodule commit changed since the golden capture;
+  a mismatch against a build of the SAME commit is a real reproducibility bug.
+PASS: all vendored GStreamer files match exactly
+
+=== TIER D: functional smoke test ===
+BLOCKED: no spare SD card/Pi available for a real flash+boot+AirPlay test (see plan).
+
+=== TIER E: raw disk bit-diff ===
+N/A by design: the .img is the deliverable, not a byte-diff target (see plan's reframing).
+```
+
+## 2026-09-09T06:48:32Z
+- golden-reference snapshot: `golden-reference/snapshots/2026-09-07/`
+- built image: `build/rpi-airplay.img` (ee4be4a873d0...)
+- UxPlay submodule commit: `797abb2`
+```
+debugfs 1.47.2 (1-Jan-2025)
+Extracted boot partition -> /tmp/compare-work/boot (422 files)
+Extracted root partition -> /tmp/compare-work/root (13287 files)
+=== TIER A: package manifest ===
+DIFF: package selections differ (- golden, + candidate):
+2d1
+< alsa-utils					install
+81d79
+< libatopology2t64:arm64				install
+139,141d136
+< libdrm-etnaviv1:arm64				install
+< libdrm-tegra0:arm64				install
+< libdrm-tests					install
+154d148
+< libfftw3-single3:arm64				install
+250a245
+> libplist-2.0-4:arm64				install
+
+=== TIER B: file-tree content (root partition, minus EXCLUDE-LIST.md) ===
+DIFF: 131 files differ in content on shared paths (see build/compare-tierb-mismatches.txt)
+  (golden-only paths: 1612, candidate-only paths: 12 -- expected for routine
+   package version bumps; see REBUILD-STATUS.md accepted-delta notes, not auto-failed here)
+
+=== TIER B (boot partition, minus known macOS-mount junk) ===
+DIFF: 2 boot files differ in content on shared paths:
+  ./dietpi-wifi.txt
+  ./dietpi.txt
+  (golden-only paths: 0, candidate-only paths: 0)
+
+=== TIER C: binary-exact (uxplay_debug + vendor GStreamer) ===
+DIFF: uxplay_debug differs (golden=e567a903fccae13bf0ef0e6b6145d9e60a538bf7e00f08cec7606036b1533793 candidate=23a217530b51bda11d7ce0e8d3f0c490ad78294707797ba15384d2adad8129bd) --
+  expected ONLY if the UxPlay submodule commit changed since the golden capture;
+  a mismatch against a build of the SAME commit is a real reproducibility bug.
+PASS: all vendored GStreamer files match exactly
+
+=== TIER D: functional smoke test ===
+BLOCKED: no spare SD card/Pi available for a real flash+boot+AirPlay test (see plan).
+
+=== TIER E: raw disk bit-diff ===
+N/A by design: the .img is the deliverable, not a byte-diff target (see plan's reframing).
+```

@@ -43,7 +43,13 @@ surviving seeks — does.
   base DietPi image's partitions to plain directories, customizes the
   root filesystem via `chroot`, rebuilds partition images, and assembles
   the final `.img` — all without loop devices or `--privileged`
-  containers (see that dir's scripts for the mechanics).
+  containers (see that dir's scripts for the mechanics). Every `apt`
+  package installed (not just the top-level ones — their full transitive
+  closure too) is pinned to an exact version via `apt-packages.lock`, so
+  the image doesn't silently drift as Debian trixie moves forward — see
+  that file's header for how to regenerate it when a deliberate version
+  bump is wanted. A persistent Docker volume caches downloaded `.deb`s
+  across builds so re-fetching unchanged packages isn't paid every time.
 - `golden-reference/` — captures the live Pi's actual state (package
   list, file-tree content hashes, redacted config) so a rebuilt image can
   be compared against it. `EXCLUDE-LIST.md` documents what's deliberately

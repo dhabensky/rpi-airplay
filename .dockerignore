@@ -1,0 +1,13 @@
+# No Dockerfile in this repo ever COPYs anything from these -- only
+# Dockerfile.uxplay-buildtest copies UxPlay/, nothing else touches the
+# build context at all. Without this, every single `docker build .`
+# (even one that's otherwise fully cache-hit) has to hash/tar the entire
+# repo directory first, including build/'s multi-GB scratch images and
+# golden-reference/'s multi-GB SD card backups -- pure wasted time on
+# every build, not just the first one.
+build/
+golden-reference/
+.git/
+UxPlay/.git/
+*.img
+*.img.xz

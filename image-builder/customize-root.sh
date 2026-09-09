@@ -1,9 +1,9 @@
 #!/bin/bash
-# Customizes an extracted DietPi root directory: installs the 3 manual
-# packages, the vendored GStreamer runtime, the uxplay binary, and
-# provisioning/files/ content; strips firmware/locale/docs; resets
-# machine-id/ssh host keys. Meant to run inside the image-builder container
-# (Dockerfile.image-builder).
+# Customizes an extracted DietPi root directory: installs the manually
+# added packages (pinned exactly via apt-packages.lock, see below), the
+# vendored GStreamer runtime, the uxplay binary, and provisioning/files/
+# content; strips firmware/locale/docs; resets machine-id/ssh host keys.
+# Meant to run inside the image-builder container (Dockerfile.image-builder).
 #
 # <root-dir> must be a Docker named volume mount, NOT a macOS host
 # bind-mount (`-v $HOST_PATH:/x`): the virtiofs bridge macOS Docker/colima
@@ -30,7 +30,27 @@ vendor="${2:?}"
 uxplay_bin="${3:?}"
 provfiles="${4:?}"
 
-echo "==> Installing packages (avahi-daemon, ffmpeg, gdb, libavahi-compat-libdnssd1, libplist-2.0-4, tcpdump)"
+# The Makefile mounts a persistent named volume directly at
+# $work/var/cache/apt/archives (via an extra `-v` flag on the `docker run`
+# that invokes this script) so re-downloading unchanged .deb files isn't
+# paid on every single rebuild -- root-dir itself is always extracted
+# fresh from the pristine base image (see the Makefile's `docker volume rm
+# -f` at the top of build/rpi-airplay.img's recipe), so without this, apt
+# has nothing to reuse across builds even when the package list hasn't
+# changed. This was the single largest per-build cost measured (~2 of the
+# ~5 minute image-assembly pipeline). Mounting it this way (Docker's own
+# `-v`, onto a path already inside the volume this script receives) needs
+# no extra capability -- unlike an in-script `mount --bind`, which would
+# need CAP_SYS_ADMIN (not in Docker's default capability set, unlike
+# CAP_SYS_CHROOT which this whole pipeline otherwise relies on) and would
+# be a real, unwanted departure from this project's zero-privilege-
+# container design. Detect whether it's actually mounted (vs. a plain
+# subdirectory of the ephemeral root-dir volume) so the `apt-get clean`
+# step below knows whether to skip cleaning it.
+apt_cache_mounted=0
+mountpoint -q "$work/var/cache/apt/archives" 2>/dev/null && apt_cache_mounted=1
+
+echo "==> Installing packages, pinned to image-builder/apt-packages.lock (avahi-daemon, ffmpeg, gdb, libavahi-compat-libdnssd1, libplist-2.0-4, tcpdump, openssh-server + their full transitive closure)"
 # libavahi-compat-libdnssd1: NOT optional. lib/CMakeLists.txt links `airplay`
 # directly against avahi-compat-libdns_sd (libdns_sd.so.1) at build time
 # (-DUSE_DNS_SD=1); confirmed via `readelf -d uxplay_debug | grep NEEDED` --
@@ -65,11 +85,40 @@ echo "==> Installing packages (avahi-daemon, ffmpeg, gdb, libavahi-compat-libdns
 # no /proc mounted (just the standard, harmless "invoke-rc.d: could not
 # determine current runlevel" chroot warning, exit 0) -- so no mount(),
 # no CAP_SYS_ADMIN, no privilege needed at all for this step.
+#
+# Every package below (not just these 7 named ones) is pinned to an exact
+# version via image-builder/apt-packages.lock -- without pinning the full
+# ~220-package transitive closure too, apt-get would silently resolve
+# whatever's currently newest in trixie for every unpinned dependency on
+# every build, making the image non-reproducible over time even though
+# the top-level package list never changes. Pins are validated against
+# whatever trixie mirror `apt-get update` currently sees, not a frozen
+# snapshot -- see that file's header for the tradeoff (a version can in
+# principle age out of the live archive; the persistent apt-cache volume
+# shields same-machine rebuilds from that even then, but a fresh machine
+# would need the lock file regenerated) and how to regenerate it.
+lockfile="$(dirname "$0")/apt-packages.lock"
+pinned_packages="$(grep -v '^#' "$lockfile" | grep -v '^$' | tr '\n' ' ')"
 cp /etc/resolv.conf "$work/etc/resolv.conf"
-chroot "$work" bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends avahi-daemon ffmpeg gdb libavahi-compat-libdnssd1 libplist-2.0-4 tcpdump openssh-server'
+chroot "$work" bash -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $pinned_packages"
 chroot "$work" bash -c 'DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq dropbear dropbear-bin 2>/dev/null || true'
 chroot "$work" bash -c 'apt-get autoremove -y -qq'
-chroot "$work" bash -c 'apt-get clean'
+if [ "$apt_cache_mounted" = 0 ]; then
+  # No persistent cache volume mounted here (e.g. this script run directly,
+  # outside the Makefile) -- clean normally so downloaded .debs don't bloat
+  # the shipped image.
+  chroot "$work" bash -c 'apt-get clean'
+else
+  # Do NOT `apt-get clean` here -- /var/cache/apt/archives is currently the
+  # persistent cache *volume* itself (mounted by the Makefile's `docker run
+  # -v`, a separate volume from root-dir's own storage); cleaning would
+  # delete the very .debs future builds are meant to reuse. This directory
+  # never ends up in the shipped image regardless: build-image.sh's later
+  # `mkfs.ext4 -d` reads root-dir's OWN volume, whose copy of this path was
+  # simply shadowed (never written to) while the cache volume was mounted
+  # over it here -- so it's still empty there, no extra step needed.
+  :
+fi
 rm -rf "$work/var/lib/apt/lists/"*
 
 echo "==> Allowing root password login over SSH"

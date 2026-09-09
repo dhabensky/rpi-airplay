@@ -26,6 +26,14 @@ GSTREAMER_CLOSURE_TAG := rpi-airplay-gstreamer-closure
 # step still uses `-v "$$PWD":/work`.
 DIETPI_ROOT_VOLUME := rpi-airplay-dietpi-root
 DIETPI_BOOT_VOLUME := rpi-airplay-dietpi-boot
+# Persists downloaded .deb files across builds (customize-root.sh's
+# apt-get install is the single largest per-build cost, ~2 of the ~5
+# minute image-assembly pipeline, almost entirely re-downloading the same
+# unchanged packages every time otherwise). Deliberately NOT wiped by the
+# `docker volume rm -f` below -- that's specifically for the intermediate
+# rootfs/bootfs trees, which must start pristine every build; this cache
+# is supposed to survive across builds.
+APT_CACHE_VOLUME := rpi-airplay-apt-cache
 
 # Convenience aliases
 image: build/rpi-airplay.img
@@ -67,6 +75,7 @@ build/dietpi-base.img: image-builder/BASE-IMAGE.env image-builder/fetch-base.sh
 build/rpi-airplay.img: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md build/dietpi-base.img \
                           $(shell find provisioning/files -type f) provisioning/setup.sh \
                           image-builder/extract-partitions.sh image-builder/customize-root.sh \
+                          image-builder/apt-packages.lock \
                           image-builder/customize-boot.sh \
                           image-builder/build-image.sh Dockerfile.image-builder
 	docker build -q -t $(IMAGE_BUILDER_TAG) -f Dockerfile.image-builder .
@@ -84,6 +93,7 @@ build/rpi-airplay.img: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md bui
 	  -v "$$PWD/build/uxplay_debug":/uxplay_debug:ro \
 	  -v "$$PWD/provisioning/files":/provfiles:ro \
 	  -v "$$PWD/image-builder":/image-builder:ro \
+	  -v $(APT_CACHE_VOLUME):/rootdir/var/cache/apt/archives \
 	  $(IMAGE_BUILDER_TAG) bash /image-builder/customize-root.sh /rootdir /vendor /uxplay_debug /provfiles
 	docker run --rm \
 	  -v $(DIETPI_BOOT_VOLUME):/dietpi-boot \
@@ -95,13 +105,15 @@ build/rpi-airplay.img: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md bui
 	  -v $(DIETPI_ROOT_VOLUME):/dietpi-root \
 	  $(IMAGE_BUILDER_TAG) bash image-builder/build-image.sh \
 	    build/dietpi-base.img /dietpi-boot /dietpi-root build/rpi-airplay.img
-	sha256sum build/rpi-airplay.img > build/rpi-airplay.img.sha256
 	@echo "Built build/rpi-airplay.img"
 
-# Rare, deliberate action -- compress an already-built image, e.g. to
-# archive or share a specific build. Never a dependency of routine
-# targets (image/verify/test-boot/test-resize all use the raw .img).
+# Rare, deliberate action -- compress (+ checksum) an already-built image,
+# e.g. to archive or share a specific build. Never a dependency of routine
+# targets (image/verify/test-boot/test-resize all use the raw .img and
+# don't need a checksum sidecar -- make verify's own compare-rebuild.sh
+# already computes its own sha256 of the built image for its report).
 image-xz: build/rpi-airplay.img
+	sha256sum build/rpi-airplay.img > build/rpi-airplay.img.sha256
 	xz -f -k build/rpi-airplay.img
 	sha256sum build/rpi-airplay.img.xz > build/rpi-airplay.img.xz.sha256
 	@echo "Built build/rpi-airplay.img.xz"
