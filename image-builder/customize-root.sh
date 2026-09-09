@@ -53,21 +53,39 @@ echo "==> Installing packages (avahi-daemon, ffmpeg, gdb, libavahi-compat-libdns
 # tcpdump: genuinely useful for AirPlay protocol debugging (see PROGRESS.md's
 # tcpdump-replay experiments), not incidental cruft from an old session --
 # kept intentionally.
-# dropbear (DietPi's default) is left as-is here -- this project's actual SSH
-# usage on the live Pi (checked against sshd_config + auth log) is plain
-# password auth + remote command execution only, no sftp/scp/X11-forwarding/
-# ProxyJump/key-based auth ever used, so dropbear fully covers it. openssh
-# was installed here once as a Tier A "fix" without checking whether it was
-# actually needed -- reverted.
+# openssh, not dropbear (reverted back a second time -- dropbear has no
+# sftp/scp support at all, which made every file deploy this project needs
+# (pushing a rebuilt uxplay_debug binary, etc.) go through an awkward
+# `ssh ... 'cat > file' < localfile` workaround instead of a normal `scp`.
+# The earlier "dropbear fully covers this project's actual usage" reasoning
+# was true only in the narrow sense that nothing had *needed* scp yet --
+# once real iteration started needing to push binaries repeatedly, that
+# turned out to matter in practice.
 # Verified empirically: these packages' postinst scripts run cleanly with
 # no /proc mounted (just the standard, harmless "invoke-rc.d: could not
 # determine current runlevel" chroot warning, exit 0) -- so no mount(),
 # no CAP_SYS_ADMIN, no privilege needed at all for this step.
 cp /etc/resolv.conf "$work/etc/resolv.conf"
-chroot "$work" bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends avahi-daemon ffmpeg gdb libavahi-compat-libdnssd1 libplist-2.0-4 tcpdump'
+chroot "$work" bash -c 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends avahi-daemon ffmpeg gdb libavahi-compat-libdnssd1 libplist-2.0-4 tcpdump openssh-server'
+chroot "$work" bash -c 'DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq dropbear dropbear-bin 2>/dev/null || true'
 chroot "$work" bash -c 'apt-get autoremove -y -qq'
 chroot "$work" bash -c 'apt-get clean'
 rm -rf "$work/var/lib/apt/lists/"*
+
+echo "==> Allowing root password login over SSH"
+# Debian's OpenSSH ships with PermitRootLogin=prohibit-password by default
+# (root can only log in via key, never password) -- this project has only
+# ever used root/password auth (no keys), and this device's console login
+# (getty@tty1) is deliberately masked below, with no other way in if this
+# is missed. Learned this the hard way: installing openssh-server without
+# this override locked out the live Pi entirely (no console, no working
+# SSH) until fixed by writing this exact file directly into the SD card's
+# ext4 image offline via `debugfs -w`.
+install -d "$work/etc/ssh/sshd_config.d"
+cat > "$work/etc/ssh/sshd_config.d/root-password-login.conf" <<'EOF'
+PermitRootLogin yes
+PasswordAuthentication yes
+EOF
 
 echo "==> Installing vendored GStreamer runtime"
 install -d "$work/usr/lib/aarch64-linux-gnu/gstreamer-1.0"

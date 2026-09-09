@@ -5,7 +5,7 @@
 # recipes under tools/ and image-builder/ -- this file is the dependency
 # graph and the one documented entry point, not where the actual logic
 # lives.
-.PHONY: image uxplay vendor-gstreamer base-image golden-reference verify \
+.PHONY: image image-xz uxplay vendor-gstreamer base-image golden-reference verify \
         reproducible-check refresh-base-image test-boot test-resize clean
 
 IMAGE_BUILDER_TAG := rpi-airplay-image-builder
@@ -28,7 +28,7 @@ DIETPI_ROOT_VOLUME := rpi-airplay-dietpi-root
 DIETPI_BOOT_VOLUME := rpi-airplay-dietpi-boot
 
 # Convenience aliases
-image: build/rpi-airplay.img.xz
+image: build/rpi-airplay.img
 uxplay: build/uxplay_debug
 vendor-gstreamer: build/vendor-gstreamer/MANIFEST.md
 base-image: build/dietpi-base.img
@@ -58,7 +58,13 @@ build/dietpi-base.img: image-builder/BASE-IMAGE.env image-builder/fetch-base.sh
 	./image-builder/fetch-base.sh image-builder/BASE-IMAGE.env build/dietpi-base.img
 
 # --- final image: extract base -> customize -> rebuild, all via image-builder ---
-build/rpi-airplay.img.xz: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md build/dietpi-base.img \
+# Produces the raw .img directly, NOT compressed -- the only consumer of
+# this artifact is `dd`ing it straight onto a card (or the local test
+# harnesses below), and xz compression is pure wasted time on every single
+# rebuild iteration for a file that's never actually downloaded/distributed
+# in that form. See `image-xz` below if a compressed copy is ever actually
+# needed (e.g. to archive/share a specific build).
+build/rpi-airplay.img: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md build/dietpi-base.img \
                           $(shell find provisioning/files -type f) provisioning/setup.sh \
                           image-builder/extract-partitions.sh image-builder/customize-root.sh \
                           image-builder/customize-boot.sh \
@@ -89,6 +95,13 @@ build/rpi-airplay.img.xz: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md 
 	  -v $(DIETPI_ROOT_VOLUME):/dietpi-root \
 	  $(IMAGE_BUILDER_TAG) bash image-builder/build-image.sh \
 	    build/dietpi-base.img /dietpi-boot /dietpi-root build/rpi-airplay.img
+	sha256sum build/rpi-airplay.img > build/rpi-airplay.img.sha256
+	@echo "Built build/rpi-airplay.img"
+
+# Rare, deliberate action -- compress an already-built image, e.g. to
+# archive or share a specific build. Never a dependency of routine
+# targets (image/verify/test-boot/test-resize all use the raw .img).
+image-xz: build/rpi-airplay.img
 	xz -f -k build/rpi-airplay.img
 	sha256sum build/rpi-airplay.img.xz > build/rpi-airplay.img.xz.sha256
 	@echo "Built build/rpi-airplay.img.xz"
@@ -97,7 +110,7 @@ build/rpi-airplay.img.xz: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md 
 golden-reference:
 	./golden-reference/capture.sh
 
-verify: build/rpi-airplay.img.xz
+verify: build/rpi-airplay.img
 	./tools/compare-rebuild.sh build/rpi-airplay.img "$(LATEST_SNAPSHOT)"
 
 reproducible-check:
@@ -116,7 +129,7 @@ refresh-base-image:
 # replace Tier D -- no GPU/display/HDMI-audio/network-adapter emulation, so
 # actual AirPlay sessions and hardware-decode performance still need the
 # real Pi. See tools/nspawn-test-boot.sh for what's actually being checked.
-test-boot: build/rpi-airplay.img.xz
+test-boot: build/rpi-airplay.img
 	colima ssh -- bash -c 'dpkg -s systemd-container >/dev/null 2>&1 || (sudo apt-get update -qq && sudo apt-get install -y -qq systemd-container)'
 	colima ssh -- sudo bash -s -- < tools/nspawn-test-boot.sh
 
@@ -125,7 +138,7 @@ test-boot: build/rpi-airplay.img.xz
 # service always takes its "container system" skip path there -- this
 # loop-mounts the actual image via a real /dev/loopN and runs that resize
 # script for real. See tools/loop-resize-test.sh for what this caught.
-test-resize: build/rpi-airplay.img.xz
+test-resize: build/rpi-airplay.img
 	colima ssh -- bash -c 'dpkg -s parted util-linux >/dev/null 2>&1 || (sudo apt-get update -qq && sudo apt-get install -y -qq parted util-linux)'
 	colima ssh -- sudo bash -s -- < tools/loop-resize-test.sh
 

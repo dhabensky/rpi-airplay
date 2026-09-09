@@ -32,9 +32,13 @@ surviving seeks — does.
   for inspecting or extracting the H.264 elementary stream from a
   recorded session.
 - `Makefile` — the actual build system. `make image` produces a complete,
-  ready-to-flash `build/rpi-airplay.img.xz` from a clean checkout; `make
+  ready-to-flash `build/rpi-airplay.img` from a clean checkout; `make
   verify` compares it against a `golden-reference/` capture of the live
-  Pi. See "Building and flashing a complete image" below.
+  Pi. See "Building and flashing a complete image" below. The raw `.img`
+  is the only artifact routine builds produce — no xz compression, since
+  every consumer of it (`dd`, the local test harnesses) uses it
+  uncompressed; `make image-xz` compresses an already-built image on
+  demand for the rare case of actually needing to archive/share one.
 - `image-builder/` — the offline image-assembly pipeline: extracts the
   base DietPi image's partitions to plain directories, customizes the
   root filesystem via `chroot`, rebuilds partition images, and assembles
@@ -79,7 +83,7 @@ the result to a Pi over SSH.
 
 ## Building and flashing a complete image
 
-`make image` builds a complete, ready-to-flash `build/rpi-airplay.img.xz`
+`make image` builds a complete, ready-to-flash `build/rpi-airplay.img`
 from a clean checkout — the UxPlay binary, vendored GStreamer runtime, and
 a customized DietPi base image, all assembled offline (no loop devices, no
 `--privileged` containers; see `image-builder/`). The only thing *not*
@@ -92,7 +96,10 @@ step, same as a stock Raspberry Pi OS/DietPi install.
 make image
 ```
 
-Produces `build/rpi-airplay.img.xz` (~220MB compressed, ~1.1GB raw) plus a
+Produces `build/rpi-airplay.img` (~1.1GB, uncompressed — this project
+never distributes/downloads this file, only `dd`s it directly, so xz
+compression would be pure wasted time on every rebuild; `make image-xz`
+compresses one on demand if a build ever actually needs archiving) plus a
 `.sha256` sidecar. `make verify` compares the build against the most
 recent `golden-reference/` capture and appends a dated entry to
 `REBUILD-STATUS.md` — read that file's latest entry for the current,
@@ -119,7 +126,6 @@ A backup you haven't verified isn't a real rollback.
 ### 3. Flash
 
 ```
-xz -dk build/rpi-airplay.img.xz          # if you only kept the .xz
 diskutil unmountDisk /dev/disk4
 sudo dd if=build/rpi-airplay.img of=/dev/rdisk4 bs=4m
 diskutil unmountDisk /dev/disk4          # again, right after — see below

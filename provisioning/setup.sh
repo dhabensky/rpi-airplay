@@ -31,18 +31,28 @@ apt-get update
 # tcpdump: genuinely useful for AirPlay protocol debugging (see PROGRESS.md's
 # tcpdump-replay experiments), not incidental cruft -- kept intentionally.
 apt-get install -y avahi-daemon ffmpeg gdb libavahi-compat-libdnssd1 libplist-2.0-4 tcpdump
-# DietPi defaults to dropbear; this project's actual SSH usage (checked
-# against the live Pi's sshd_config + auth log) is plain password auth and
-# remote command execution only -- no sftp/scp, no X11 forwarding, no
-# ProxyJump, no key-based auth ever used -- so dropbear fully covers it.
-# openssh-server was installed once as a 'fix' for a Tier A diff without
-# checking whether it was actually needed; reverted back to DietPi's default.
-# Install dropbear BEFORE purging openssh -- if this script runs over an
-# existing openssh-only SSH session (as it would on the live Pi today),
-# purging openssh first would cut off remote access before dropbear is
-# there to take over.
-apt-get install -y dropbear dropbear-bin
-apt-get purge -y openssh-server openssh-client openssh-sftp-server 2>/dev/null || true
+# openssh, not dropbear (reverted a second time) -- dropbear has no
+# sftp/scp support at all, which forces every file deploy this project
+# actually needs (pushing a rebuilt uxplay_debug binary, etc.) through an
+# awkward `ssh ... 'cat > file' < localfile` workaround instead of `scp`.
+# Install openssh BEFORE purging dropbear -- if this script runs over an
+# existing dropbear-only SSH session, purging dropbear first would cut off
+# remote access before openssh is there to take over.
+apt-get install -y openssh-server openssh-client openssh-sftp-server
+# Debian's OpenSSH ships with PermitRootLogin=prohibit-password by default
+# (root can only log in via key, never password) -- this project has only
+# ever used root/password auth. Without this override, installing
+# openssh-server locks the device out entirely the moment dropbear is
+# purged below (learned the hard way: no console fallback either, since
+# getty@tty1 is masked -- had to fix this by writing this exact file
+# directly into the SD card's ext4 image offline via `debugfs -w`).
+install -d /etc/ssh/sshd_config.d
+cat > /etc/ssh/sshd_config.d/root-password-login.conf <<'EOF'
+PermitRootLogin yes
+PasswordAuthentication yes
+EOF
+systemctl reload ssh 2>/dev/null || true
+apt-get purge -y dropbear dropbear-bin 2>/dev/null || true
 apt-get autoremove -y
 
 echo "==> Vendoring GStreamer runtime (not available as trixie arm64 packages"
