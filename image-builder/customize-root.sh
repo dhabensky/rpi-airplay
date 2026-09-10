@@ -157,6 +157,24 @@ ConditionFirstBoot=
 ConditionPathExists=!/etc/ssh/ssh_host_rsa_key
 EOF
 
+echo "==> Marking DietPi's first-run setup as already complete"
+# /boot/dietpi/.install_stage (part of the root ext4 partition, NOT the
+# FAT32 firmware boot partition despite the "/boot" path) tracks DietPi's
+# own first-run flow: -1 = not yet run, 1 = dietpi-update finished, 2 =
+# dietpi-software finished (see /boot/dietpi/dietpi-login's own checks at
+# that exact value). It ships at -1 in the base image, and normally only
+# advances via DietPi's own dietpi-firstrun-setup service actually
+# executing at real boot time -- which never happens in THIS pipeline's
+# offline chroot build (no live systemd here to run it). Left at -1,
+# dietpi-login (sourced on every interactive login) reruns the entire
+# apt-update/dietpi-software first-run wizard on every single SSH login,
+# forever -- confirmed on the real device. This project's own build
+# pipeline already IS the "first-run setup" (packages, users, config all
+# baked in at build time, matching the project's whole design), so just
+# mark it done directly rather than let DietPi redundantly redo its own
+# version of that at login time.
+echo 2 > "$work/boot/dietpi/.install_stage"
+
 echo "==> Installing vendored GStreamer runtime"
 install -d "$work/usr/lib/aarch64-linux-gnu/gstreamer-1.0"
 install -m 0644 -t "$work/usr/lib/aarch64-linux-gnu/gstreamer-1.0" "$vendor/plugins/"*.so
