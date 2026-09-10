@@ -19,4 +19,10 @@ libgstvideoconvertscale.so  # videoscale (in the pipeline between decoder and km
 libgstvideofilter.so    # base class several video elements depend on
 libgstvideoparsersbad.so   # h264parse (parses the incoming Annex-B stream before the decoder)
 libgstvideorate.so      # videorate, pulled in as a playbin/decodebin dependency
+libgstvideotestsrc.so   # videotestsrc pattern=black -- video_renderer_blank_display()'s
+                         # throwaway pipeline paints one black frame over kmssink's last
+                         # scanned-out content on session teardown (real info-disclosure fix,
+                         # see renderers/video_renderer.c). Only pulls in core
+                         # gstreamer/glib/orc libs already required by the rest of this
+                         # closure -- no X11/Wayland/PulseAudio, confirmed via ldd.
 libgstvolume.so         # volume (audio pipeline element UxPlay inserts for volume control)
