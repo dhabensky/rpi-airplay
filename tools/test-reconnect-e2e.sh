@@ -63,8 +63,8 @@ ssh "$TARGET" "
   cd /tmp
   GST_DEBUG=kmssink:6 UX_RECONNECT_MODE=real UX_RECONNECT_AT_MS=${RECONNECT_MS} \
     stdbuf -oL -eL /usr/local/bin/uxplay_debug \
-    -vd v4l2h264dec -vc identity -srgb no -n 'Living Room TV' -reset 60 \
-    -vs 'kmssink force-modesetting=true qos=false ts-offset=300000000' \
+    -nohold -vd v4l2h264dec -vc identity -srgb no -n 'Living Room TV' -reset 60 \
+    -vs 'kmssink qos=false ts-offset=300000000' \
     -as 'alsasink device=plughw:vc4hdmi,0' \
     -replay /tmp/test-reconnect.cap > /tmp/test-reconnect.log 2>&1
   echo exit_code=\$?

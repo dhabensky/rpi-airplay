@@ -5,6 +5,6 @@
 # hiccups & reconnect). Optional +ms delays VIDEO to trim a residual offset.
 D=${1:-300}; NS=$((D*1000000))
 pkill -9 -x uxplay_debug 2>/dev/null; sleep 1
-setsid runuser -u uxplay -- env HOME=/home/uxplay   GST_REGISTRY=/home/uxplay/.cache/gstreamer-1.0/registry.bin   /usr/local/bin/uxplay_debug     -vd v4l2h264dec -vc identity -srgb no     -n 'Living Room TV' -reset 60     -vs "kmssink force-modesetting=true qos=false ts-offset=$NS"     -as 'alsasink device=plughw:vc4hdmi,0'     </dev/null >/tmp/uxplay-test.log 2>&1 & disown
+setsid runuser -u uxplay -- env HOME=/home/uxplay   GST_REGISTRY=/home/uxplay/.cache/gstreamer-1.0/registry.bin   /usr/local/bin/uxplay_debug     -nohold -vd v4l2h264dec -vc identity -srgb no     -n 'Living Room TV' -reset 60     -vs "kmssink qos=false ts-offset=$NS"     -as 'alsasink device=plughw:vc4hdmi,0'     </dev/null >/tmp/uxplay-test.log 2>&1 & disown
 sleep 2
 pgrep -x uxplay_debug >/dev/null && echo "running: sync=true, qos=false, video ts-offset=${D}ms" || { echo FAILED; tail -5 /tmp/uxplay-test.log; }

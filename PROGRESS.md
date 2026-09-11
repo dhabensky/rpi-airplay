@@ -447,3 +447,60 @@ tail -f /var/log/uxplay.log
 cat /sys/kernel/debug/dri/0/state | grep -A10 'plane\['
 modetest -M vc4 -p | less   # full property dump incl. zpos/alpha/type per plane
 ```
+
+## 2026-09-11: `force-modesetting=true` causes a ~750ms-per-frame stall for
+## non-native-resolution content; removed. `-nohold` added (stale-connection
+## rejection). Real-session `.cap` files are now a regression corpus.
+
+**Symptom:** mirroring from one specific Mac (older AirPlay client, sends a
+non-16:9 pixel-aspect-ratio that kmssink scales to an odd resolution, e.g.
+1662x1080 instead of native 1920x1080) showed video freeze at 1 frame, or —
+after a reconnect — a burst of skipped/rushed frames. A *different* Mac
+(newer AirPlay client, sends content that already matches the display's
+native mode) mirrored perfectly. Audio was unaffected once real content was
+actually playing (a `-nohold` bug, see below, had been masking this as an
+"audio never works" issue for hours — don't conflate connection-rejection
+symptoms with codec/protocol ones again).
+
+**Root cause, proven with byte-exact evidence (`GST_DEBUG=v4l2videodec:5,v4l2bufferpool:5`):**
+the decoder's *capture* (decoded-frame output) buffer pool has only 3 buffers.
+Tracing `mark buffer N outstanding` / `mark buffer N not outstanding` showed
+each buffer held for a **constant ~745-775ms** before being released back —
+v4l2h264dec re-acquires the just-freed buffer within ~20ms every time, so it
+is never actually input-starved; something downstream just takes ~750ms per
+frame to let go of each buffer. `kmssink sync=false` (a live test) changed
+**nothing** — ruling out clock/PTS-deadline waiting entirely. The remaining
+suspect was `force-modesetting=true`, which forces kmssink onto the primary
+plane via a real DRM modeset (see 2026-09-06 entry above, where this flag was
+*added* to fix a slow ~15fps overlay-plane issue for normal 16:9 content) —
+for this odd non-native resolution, whatever kmssink/DRM does per-frame under
+`force-modesetting` is apparently the ~750ms cost. **Removing the flag** took
+the real captured session from 2/153 render/decode events (nearly frozen) to
+941/944 in the offline `-replay` harness — confirmed no regression on the
+*original* 2026-09-06 problem by also replaying a synthetic 1920x1080 capture:
+732/737 render/decode events, still smooth. Both `provisioning/files/etc/systemd/
+system/uxplay.service` and `uxrun` updated to drop `force-modesetting=true`.
+If the old slow-overlay-plane bug ever reappears for some other resolution,
+re-test with `force-modesetting=true` restored and compare `-replay` render
+counts before assuming it's still needed — don't just re-add it blind.
+
+**Separate real bug, also fixed:** `raop.c`'s single-client enforcement
+(`http_response_init(*response, protocol, 409, "Conflict: Server is connected
+to another client")`) has no timeout/cleanup for a connection object that the
+client itself abandoned without a clean TEARDOWN — a stale registration can
+silently reject every subsequent real connection attempt (including from a
+different device) with 409, which a client's own AirPlay stack reports as
+`FP-Setup failed: Conflict` / `Stage 1 failed` at the very start, before any
+audio/video negotiation even begins. Added `-nohold` (an existing UxPlay flag,
+"drop current connection when new client connects") to the systemd unit —
+correct fit for a single dedicated-receiver appliance, where whoever is
+currently trying to mirror should always win.
+
+**Methodology note for next time:** don't ask the user to re-trigger a live
+AirPlay session per hypothesis. Record one real session via `-capture`
+(already-existing harness, see 2026-09-06 entry) once, then iterate entirely
+via `-replay` + `GST_DEBUG` on the Pi. `tools/captures/` now holds real
+captured sessions (gitignored via `*.cap`, kept locally) — treat them as a
+growing regression corpus, not disposable debugging scratch: replay every one
+of them after any future `kmssink`/`v4l2h264dec` pipeline change, the same
+way `tools/test-reconnect-e2e.sh` already replays the reconnect-path capture.
