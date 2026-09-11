@@ -496,6 +496,28 @@ audio/video negotiation even begins. Added `-nohold` (an existing UxPlay flag,
 correct fit for a single dedicated-receiver appliance, where whoever is
 currently trying to mirror should always win.
 
+**`-nohold` reverted the same day -- wrong fix, real UX regression.** Live
+dual-client test (deliberately started mirroring from a second Mac while the
+first was actively mirroring) showed `-nohold` doing exactly what it says:
+silently dropping the ACTIVE session's connection mid-stream to let the new
+one in, and the new one itself needed two connection attempts before actually
+working. User's explicit expectation, confirmed correct: a single-appliance
+receiver should **refuse** (or go quiet on) a second client while genuinely
+in active use, not silently evict the current one -- which is what the code
+already did before `-nohold` (the 409 "Conflict" rejection). The actual bug
+was narrower: a connection the *client itself* abandoned without a clean
+TEARDOWN could stay registered and keep rejecting new attempts past the point
+it reasonably should. That already has a built-in recovery: `-reset 60`
+resets the whole HTTP daemon (`raop_stop_httpd` + `raop_remove_known_
+connections`, uxplay.cpp's `relaunch_video`/`reset_httpd` path) after 60s of
+missed client feedback, clearing any stale registration -- verified by
+reading the code path, not yet empirically re-confirmed live (couldn't be,
+via `-replay`: this is httpd/connection-registry behavior, entirely outside
+what the replay harness's video/audio frame feeder exercises). If a stale
+connection is ever observed blocking new connections for longer than ~60s,
+that's the next real bug to chase -- not another blunt "always let the
+newest connection win" flag.
+
 **Methodology note for next time:** don't ask the user to re-trigger a live
 AirPlay session per hypothesis. Record one real session via `-capture`
 (already-existing harness, see 2026-09-06 entry) once, then iterate entirely
