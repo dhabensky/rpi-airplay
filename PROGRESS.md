@@ -925,3 +925,70 @@ disconnect and reconnect that's normally instantaneous.
 Deployed live via SSH to the running Pi (`/usr/local/bin/uxplay_debug`,
 checksum-verified against the local build) for immediate relief; not yet
 baked into a rebuilt image (submodule `dd95564`, main repo `9163da0`).
+
+## 2026-09-12 (later still): boot console text bleeding through the primary
+plane -- real regression found immediately after flashing the new image
+
+Reported directly, right after the image above was flashed: pillarbox
+margins for non-16:9 content showed boot text instead of black, AND the
+just-fixed frozen-frame-hide (previous entry) revealed boot text instead of
+a black screen after mirroring stopped. Both symptoms are the exact same
+root cause, not two bugs: `/dev/fb0` (the DRM primary plane's backing
+buffer, confirmed via a real dump converted to PNG) was found to contain a
+frozen snapshot of *late* boot console output -- lines up through "Started
+uxplay.service" and later boot targets -- sitting there hours after boot,
+even though `zero-fb0` (`uxplay.service`'s `ExecStartPre`, from an earlier
+session) ran successfully at service start.
+
+Why the earlier fix wasn't enough: `zero-fb0` only runs ONCE, early in
+boot. The base DietPi image's stock `cmdline.txt` ships with BOTH
+`console=ttyS0,115200` (serial, kept intentionally) AND `console=tty1`
+(fbcon, never previously questioned) as active kernel consoles -- every
+kernel/systemd line printed during boot gets rendered onto `/dev/fb0`'s
+actual backing memory by fbcon, including messages that arrive strictly
+*after* `zero-fb0` already ran (confirmed: the captured snapshot included
+`systemd` reaching `multi-user.target`/`graphical.target`, which only
+happens after `uxplay.service` -- and therefore its `ExecStartPre` -- has
+already started). Previously invisible because kmssink's video overlay
+plane always covered the ENTIRE reported symptom area on top of it -- a
+fresh flash's differently-timed/longer boot log, combined with the new
+frozen-frame fix moving the ENTIRE video plane away instead of just
+shrinking margins, is what finally made it visible enough to notice.
+
+Root-cause fix (not a timing patch): remove `console=tty1` from
+`cmdline.txt` entirely (`image-builder/customize-boot.sh`), so the kernel
+never draws console text onto the framebuffer again, rather than trying to
+win a race re-zeroing it afterwards. One more artifact remained after that:
+a single blinking VT cursor character in the top-left corner, from fbcon's
+own cursor rendering (independent of whether any console text is actually
+routed there) -- fixed with `vt.global_cursor_default=0`. `zero-fb0` is
+kept as defense in depth, not removed.
+
+**Positively verified, not just "should be fixed now"**: rebooted the live
+device twice with a real fb0 dump converted to PNG and eyeballed after
+each -- first pass (console=tty1 removed only) still showed the cursor
+artifact; second pass (both flags) showed genuinely nothing after 5+
+minutes of uptime. Then re-verified against the ACTUAL originally-reported
+scenario end to end: ran the real disconnect/hide replay test again and
+checked `/dev/fb0` right during the hidden window -- confirmed zero, not
+just zero in isolation.
+
+**New standing regression test** (per explicit request: "сделай на это
+тест чтобы больше так лажать" -- write a test for this so it doesn't
+happen again): `tools/test-fb0-stays-black-e2e.sh`. Reboots the real
+device (this bug is fundamentally about boot-sequence behavior --
+`-replay` never goes through a real boot and can't catch it at all), waits
+for `uxplay.service` to become active, waits an additional settle period
+(default 90s -- the actual regression window, since console text can
+arrive after the service is already reported active), then asserts
+`/dev/fb0` is genuinely all-zero. **Verified the test itself has real
+detection power**, not just that it happens to pass: temporarily
+reintroduced `console=tty1` on the live device, confirmed the test
+correctly FAILs and pinpoints the byte offset, then reverted and confirmed
+PASS again.
+
+Also fixed a real inconsistency noticed while writing this test:
+`tools/test-reconnect-e2e.sh` was the only e2e script here that didn't
+wrap `ssh`/`scp` with `sshpass` (its sibling `test-render-health-e2e.sh`
+already did) -- it silently hung waiting for an interactive password
+prompt when run without an external workaround. Fixed to match.

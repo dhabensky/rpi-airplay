@@ -29,6 +29,14 @@ cd "$(dirname "$0")/.."
 TARGET="${1:-root@192.168.1.34}"
 DURATION="${2:-24}"
 RECONNECT_AT="${3:-12}"
+
+# Password auth, no key set up on this device (matches the other e2e
+# scripts here -- see tools/test-render-health-e2e.sh). Plain ssh/scp hang
+# waiting for an interactive password prompt that never comes.
+SSH_PASS="${UXPLAY_SSH_PASSWORD:-dietpi}"
+SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o PreferredAuthentications=password -o PubkeyAuthentication=no)
+ssh() { sshpass -p "$SSH_PASS" /usr/bin/ssh "${SSH_OPTS[@]}" "$@"; }
+scp() { sshpass -p "$SSH_PASS" /usr/bin/scp -o StrictHostKeyChecking=accept-new "$@"; }
 # Under build/, not system mktemp -d: macOS's real tmp dir (/var/folders/...)
 # isn't shared into colima's VM, so a Docker bind-mount onto it silently
 # produces an empty view from inside the container (confirmed the hard way
