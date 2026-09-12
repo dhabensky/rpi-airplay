@@ -40,3 +40,9 @@ golden-reference/sdcard-backups/
 
 # macOS
 .DS_Store
+
+# Personal, machine-specific build settings (WiFi credentials, overscan
+# tuning, anything else personal added later) -- read by `make image` if
+# present, entirely optional otherwise. See personal.env.example for the
+# format. Never commit real values.
+/personal.env

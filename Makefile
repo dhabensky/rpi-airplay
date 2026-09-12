@@ -11,6 +11,11 @@
 IMAGE_BUILDER_TAG := rpi-airplay-image-builder
 GSTREAMER_CLOSURE_TAG := rpi-airplay-gstreamer-closure
 
+# Optional, gitignored, personal (WiFi creds, overscan tuning, ... -- see
+# personal.env.example). Empty if the file doesn't exist -- `make image`
+# must produce a complete, working (if less personalized) image either way.
+PERSONAL_ENV := $(wildcard personal.env)
+
 # Named Docker volumes (NOT host bind-mounts) for the intermediate
 # extracted/customized partition trees. Required, not a style choice: on
 # macOS, Docker/colima shares host bind-mounts via virtiofs, whose daemon
@@ -77,7 +82,8 @@ build/rpi-airplay.img: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md bui
                           image-builder/extract-partitions.sh image-builder/customize-root.sh \
                           image-builder/apt-packages.lock \
                           image-builder/customize-boot.sh \
-                          image-builder/build-image.sh Dockerfile.image-builder
+                          image-builder/build-image.sh Dockerfile.image-builder \
+                          $(PERSONAL_ENV)
 	docker build -q -t $(IMAGE_BUILDER_TAG) -f Dockerfile.image-builder .
 	docker volume rm -f $(DIETPI_ROOT_VOLUME) $(DIETPI_BOOT_VOLUME) >/dev/null 2>&1 || true
 	docker run --rm \
@@ -94,11 +100,13 @@ build/rpi-airplay.img: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md bui
 	  -v "$$PWD/provisioning/files":/provfiles:ro \
 	  -v "$$PWD/image-builder":/image-builder:ro \
 	  -v $(APT_CACHE_VOLUME):/rootdir/var/cache/apt/archives \
-	  $(IMAGE_BUILDER_TAG) bash /image-builder/customize-root.sh /rootdir /vendor /uxplay_debug /provfiles
+	  $(if $(PERSONAL_ENV),-v "$$PWD/personal.env":/personal.env:ro,) \
+	  $(IMAGE_BUILDER_TAG) bash /image-builder/customize-root.sh /rootdir /vendor /uxplay_debug /provfiles $(if $(PERSONAL_ENV),/personal.env,)
 	docker run --rm \
 	  -v $(DIETPI_BOOT_VOLUME):/dietpi-boot \
 	  -v "$$PWD/image-builder":/image-builder:ro \
-	  $(IMAGE_BUILDER_TAG) bash /image-builder/customize-boot.sh /dietpi-boot
+	  $(if $(PERSONAL_ENV),-v "$$PWD/personal.env":/personal.env:ro,) \
+	  $(IMAGE_BUILDER_TAG) bash /image-builder/customize-boot.sh /dietpi-boot $(if $(PERSONAL_ENV),/personal.env,)
 	docker run --rm \
 	  -v "$$PWD":/work -w /work \
 	  -v $(DIETPI_BOOT_VOLUME):/dietpi-boot \

@@ -8,10 +8,11 @@
 # (a verbatim capture of the live Pi's actual file) -- these are the only
 # 4 lines that differ from the pristine base image's own config.txt/cmdline.txt.
 #
-# Usage: image-builder/customize-boot.sh <boot-dir>
+# Usage: image-builder/customize-boot.sh <boot-dir> [personal-env-file]
 set -euo pipefail
 
-bootdir="${1:?usage: $0 <boot-dir>}"
+bootdir="${1:?usage: $0 <boot-dir> [personal-env-file]}"
+personal_env="${2:-}"
 
 echo "==> Fixing GPU memory split (16 -> 128 -- 16MB is nowhere near enough for"
 echo "    real video decode/display work)"
@@ -72,5 +73,31 @@ sed -i \
   -e 's/^CONFIG_CHECK_DIETPI_UPDATES=.*/CONFIG_CHECK_DIETPI_UPDATES=0/' \
   -e 's/^CONFIG_CHECK_APT_UPDATES=.*/CONFIG_CHECK_APT_UPDATES=0/' \
   "$bootdir/dietpi.txt"
+
+if [ -n "$personal_env" ] && [ -f "$personal_env" ]; then
+  # shellcheck disable=SC1090
+  . "$personal_env"
+  if [ -n "${WIFI_SSID:-}" ]; then
+    echo "==> Filling in WiFi credentials from personal.env (entry 0)"
+    # DietPi's own documented escaping rule for dietpi-wifi.txt (see the
+    # file's own header comment): a literal single quote in the value must
+    # become '\'' inside the surrounding single-quoted assignment.
+    esc_ssid=$(printf '%s' "$WIFI_SSID" | sed "s/'/'\\\\''/g")
+    esc_key=$(printf '%s' "${WIFI_PASSWORD:-}" | sed "s/'/'\\\\''/g")
+    # awk, not sed -- sed's own change/substitute commands treat a
+    # backslash in the REPLACEMENT text as an escape character (consuming
+    # it), which silently corrupts the '\'' escape sequence above the
+    # instant it contains one. Confirmed empirically: sed's `c\` ate the
+    # backslash, producing `'''` instead of `'\''`. awk's plain string
+    # printing has no such reinterpretation.
+    awk -v ssid="$esc_ssid" -v key="$esc_key" '
+      /^aWIFI_SSID\[0\]=/  { print "aWIFI_SSID[0]='"'"'"  ssid "'"'"'"; next }
+      /^aWIFI_KEY\[0\]=/   { print "aWIFI_KEY[0]='"'"'"   key  "'"'"'"; next }
+      /^aWIFI_KEYMGR\[0\]=/{ print "aWIFI_KEYMGR[0]='"'"'WPA-PSK'"'"'"; next }
+      { print }
+    ' "$bootdir/dietpi-wifi.txt" > "$bootdir/dietpi-wifi.txt.new"
+    mv "$bootdir/dietpi-wifi.txt.new" "$bootdir/dietpi-wifi.txt"
+  fi
+fi
 
 echo "Boot customization complete: $bootdir"

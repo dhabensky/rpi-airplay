@@ -22,13 +22,14 @@
 # the host anymore -- inspect it via `docker run -v <volume>:/x ... find/stat`.)
 #
 # Usage: image-builder/customize-root.sh <root-dir> <vendor-gstreamer-dir> \
-#          <uxplay-debug-binary> <provisioning-files-dir>
+#          <uxplay-debug-binary> <provisioning-files-dir> [personal-env-file]
 set -euo pipefail
 
-work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <provisioning-files-dir>}"
+work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <provisioning-files-dir> [personal-env-file]}"
 vendor="${2:?}"
 uxplay_bin="${3:?}"
 provfiles="${4:?}"
+personal_env="${5:-}"
 
 # The Makefile mounts a persistent named volume directly at
 # $work/var/cache/apt/archives (via an extra `-v` flag on the `docker run`
@@ -193,6 +194,25 @@ install -m 0755 "$provfiles/usr/local/bin/uxrun" "$work/usr/local/bin/uxrun"
 # never actually added here -- a fresh image build would have silently
 # shipped without it.
 install -m 0755 "$provfiles/usr/local/bin/zero-fb0" "$work/usr/local/bin/zero-fb0"
+
+if [ -n "$personal_env" ] && [ -f "$personal_env" ]; then
+  # shellcheck disable=SC1090
+  . "$personal_env"
+  if [ -n "${OVERSCAN_LEFT:-}" ] || [ -n "${OVERSCAN_RIGHT:-}" ] || [ -n "${OVERSCAN_TOP:-}" ] || [ -n "${OVERSCAN_BOTTOM:-}" ]; then
+    echo "==> Baking in overscan compensation from personal.env"
+    cat > "$work/etc/default/uxplay" <<EOF
+# Pixels to inset the rendered picture on each edge, compensating for this
+# TV's own overscan/zoom cropping the outer edges of the HDMI signal.
+# Applied live -- edit and save, no restart or reconnect needed (uxplay
+# watches this file). Baked in at image-build time from personal.env; see
+# PROGRESS.md's 2026-09-12 entry for how to measure your own TV's crop.
+UXPLAY_OVERSCAN_LEFT=${OVERSCAN_LEFT:-0}
+UXPLAY_OVERSCAN_RIGHT=${OVERSCAN_RIGHT:-0}
+UXPLAY_OVERSCAN_TOP=${OVERSCAN_TOP:-0}
+UXPLAY_OVERSCAN_BOTTOM=${OVERSCAN_BOTTOM:-0}
+EOF
+  fi
+fi
 
 echo "==> Un-blacklisting the bcm2835 hardware H.264 decoder"
 rm -f "$work/etc/modprobe.d/dietpi-disable_rpi_codec.conf"

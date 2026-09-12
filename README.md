@@ -92,9 +92,16 @@ the result to a Pi over SSH.
 `make image` builds a complete, ready-to-flash `build/rpi-airplay.img`
 from a clean checkout — the UxPlay binary, vendored GStreamer runtime, and
 a customized DietPi base image, all assembled offline (no loop devices, no
-`--privileged` containers; see `image-builder/`). The only thing *not*
-baked into the image is WiFi credentials — a deliberate, one-time manual
-step, same as a stock Raspberry Pi OS/DietPi install.
+`--privileged` containers; see `image-builder/`).
+
+### 0. Optional: personal settings baked into the image
+
+Copy `personal.env.example` to `personal.env` (gitignored, never committed)
+and fill in real values — WiFi credentials and/or overscan compensation —
+before running `make image`. Both are entirely optional and independent:
+leave a field blank (or skip the file entirely) to get the exact same
+image as before, needing the manual steps below instead. `make image`
+picks this file up automatically if present; no other step needed.
 
 ### 1. Build
 
@@ -145,13 +152,13 @@ filenames it expects — but don't mistake it for a bad flash if you go
 looking at the card's contents afterwards; it'll keep reappearing as long
 as the volume stays mounted, so there's no point trying to clean it up.
 
-### 4. WiFi — the one deliberate manual step
+### 4. WiFi — skip this if you set WIFI_SSID/WIFI_PASSWORD in personal.env
 
-The image ships with no WiFi credentials (not even in
-`golden-reference/`, which stores only a redacted template — see
-`EXCLUDE-LIST.md`). Before the first real boot, mount the boot partition
-(`/dev/disk4s1`, FAT32 — auto-mounts on macOS) and fill in one entry of
-`dietpi-wifi.txt`:
+Only needed if step 0 was skipped. The image ships with no WiFi
+credentials by default (not even in `golden-reference/`, which stores only
+a redacted template — see `EXCLUDE-LIST.md`). Before the first real boot,
+mount the boot partition (`/dev/disk4s1`, FAT32 — auto-mounts on macOS)
+and fill in one entry of `dietpi-wifi.txt`:
 
 ```
 aWIFI_SSID[0]='YourSSID'
