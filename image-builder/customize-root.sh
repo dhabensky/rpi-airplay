@@ -186,9 +186,13 @@ install -m 0644 -t "$work/usr/lib/aarch64-linux-gnu" "$vendor/libs/"*
 echo "==> Installing uxplay_debug binary"
 install -m 0755 "$uxplay_bin" "$work/usr/local/bin/uxplay_debug"
 
-echo "==> Installing provisioning/files/ content (systemd unit, udev rule, modules-load, uxrun)"
+echo "==> Installing provisioning/files/ content (systemd unit, udev rule, modules-load, uxrun, zero-fb0)"
 cp -a "$provfiles/etc/." "$work/etc/"
 install -m 0755 "$provfiles/usr/local/bin/uxrun" "$work/usr/local/bin/uxrun"
+# zero-fb0: 2026-09-12 fix, was previously only ever deployed ad hoc over SSH,
+# never actually added here -- a fresh image build would have silently
+# shipped without it.
+install -m 0755 "$provfiles/usr/local/bin/zero-fb0" "$work/usr/local/bin/zero-fb0"
 
 echo "==> Un-blacklisting the bcm2835 hardware H.264 decoder"
 rm -f "$work/etc/modprobe.d/dietpi-disable_rpi_codec.conf"

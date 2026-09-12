@@ -9,5 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY tools/drmdump.c /src/drmdump.c
+COPY tools/drmpaint.c /src/drmpaint.c
 WORKDIR /src
-RUN gcc -O2 -Wall -o drmdump drmdump.c $(pkg-config --cflags --libs libdrm)
+RUN gcc -O2 -Wall -o drmdump drmdump.c $(pkg-config --cflags --libs libdrm) && \
+    gcc -O2 -Wall -o drmpaint drmpaint.c $(pkg-config --cflags --libs libdrm)

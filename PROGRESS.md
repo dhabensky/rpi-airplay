@@ -668,3 +668,111 @@ pipeline entirely) has not been empirically confirmed. Next step if this is
 revisited: dump plane state right after a real disconnect and check the
 overlay plane's `fb_id` actually goes to 0 / the plane is removed from the
 composition.
+
+## 2026-09-12: configurable overscan compensation, tunable live without
+dropping the connection — new standing product requirement
+
+The TV crops a small margin off all four edges via its own internal
+overscan/zoom scaling, confirmed with a new pixel-ruler calibration tool
+(see below) plus a real photo of the TV: roughly left≈8px, right≈28px,
+top≈5px, bottom≈0px (under ~1.5% per edge; real uncertainty from a single
+angled photo — the left/right asymmetry is more likely a perspective
+artifact than a genuine asymmetric crop). This TV has no "Just Scan"/"1:1
+Pixel Mapping" setting, so there's no TV-side fix. **Standing product
+requirement going forward**: the Pi must compensate for overscan itself,
+tunable by the user, without stopping an active mirroring session.
+
+**New calibration tooling** (`tools/drmdump.c`, `tools/drmpaint.c`,
+`Dockerfile.drmdump-buildtest`, cross-built the same way as `uxplay_debug`):
+- `drmpaint`: paints a pixel-accurate concentric black/white ruler pattern
+  (10px bands, colored reference lines at 50/150/150px — though the 1px-wide
+  color lines turned out too thin to survive TV scaling + photo compression;
+  future version should use thicker color bands) directly onto the DRM
+  primary plane via a dumb buffer, held for a configurable duration. Used to
+  get one real photo of the TV showing a known pattern.
+- `drmdump`: reads real DRM plane content and geometry. Extended twice this
+  session: (1) `drmModeGetFB2` + PRIME export for multi-planar/modifier
+  framebuffers (real decoded video is YUV420/YU12, which the simple
+  dumb-buffer path can't read — `drmModeGetFB` fails EINVAL on these); (2)
+  atomic `CRTC_X`/`CRTC_Y`/`CRTC_W`/`CRTC_H` plane properties (needs
+  `DRM_CLIENT_CAP_ATOMIC`, not just `DRM_CLIENT_CAP_UNIVERSAL_PLANES` —
+  these aren't exposed to a non-atomic client at all) — this is the actual
+  on-screen destination rectangle a plane is composited into, which is
+  *not* the same as the decoded buffer's own native dimensions (confirmed:
+  the buffer stays 1662x1080 — the source's native decode size — regardless
+  of `render-rectangle`; only these 4 properties change).
+- The photo was measured programmatically: locate the bezel edge and the
+  point where the ruler pattern flattens into solid gray, solve against the
+  known 200px reference distance. See git history for the exact script.
+
+**Mechanism**: `kmssink`'s `render-rectangle` property (a plain GObject
+property) fits/letterboxes its output inside an inset sub-rectangle instead
+of the full 1920x1080; the margin renders solid black because the DRM
+primary plane underneath is kept zeroed (`zero-fb0`, 2026-09-12 fix above).
+Confirmed via `drmdump`'s new atomic-property reading that kmssink does
+correct aspect-preserving fit-and-center *within* that inset box (verified
+the exact expected math: for a 1920x1870-inset-to-1638-wide fit of 1662x1080
+source content, centered, `CRTC_X`/`CRTC_W` matched the hand-computed
+values exactly).
+
+**Live tuning, without dropping the connection**: this needed real code
+changes, not just a provisioning script — only the process holding the live
+kmssink elements can change this property without a pipeline rebuild.
+- `UxPlay/renderers/video_renderer.c`: new `video_renderer_apply_overscan()`
+  reads `/etc/default/uxplay` (`UXPLAY_OVERSCAN_{LEFT,RIGHT,TOP,BOTTOM}`,
+  pixels, all default 0), validates, and applies the rectangle to every live
+  named kmssink element (`gst_bin_get_by_name`, `"<sink>_<codec>"`, e.g.
+  `"kmssink_h264"`) via `gst_util_set_object_arg` — reusing the exact
+  string syntax already proven to work live earlier this session, rather
+  than hand-building a `GValueArray`.
+- `UxPlay/uxplay.cpp`: calls it once at startup (right after
+  `video_renderer_start()`), and registers a `GFileMonitor` on the config
+  file inside `main_loop()` for later live edits.
+- **First live-reload trigger design (SIGHUP) was wrong** — confirmed via
+  `grep`: SIGHUP is already claimed in this exact file, mapped to the same
+  graceful-shutdown handler as SIGINT. User's explicit choice: fully
+  automatic (inotify via `GFileMonitor`), not a manual `systemctl reload`
+  signal — implemented instead.
+- **First test methodology was wrong, caught before shipping**: tested the
+  live-reload exclusively via `-replay`, which uses its own separate
+  `replay_loop`/loop function and never reaches `main_loop()` at all — so
+  the file-monitor code path was silently never exercised, even though the
+  test "looked" like it passed (one edit's value happened to appear in the
+  log, purely because the *startup* apply's own ~5s kmssink init latency
+  raced past the edit and read the post-edit file — not because live-reload
+  fired). Caught by re-running with clean timing separation between the
+  startup window and the edit. **Live reload can only be tested against the
+  real daemon loop** (`main_loop()`, reached in normal operation regardless
+  of whether a client is connected — confirmed via `grep -n "main_loop("`,
+  called exactly once from `main()`), not via `-replay`.
+- Verified correctly once tested against the right loop: `GFileMonitor`
+  correctly debounces a `cat > file` overwrite's raw filesystem events
+  (`G_FILE_MONITOR_EVENT_CHANGED` ×2) into a single
+  `G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT`, which triggers exactly one
+  correct re-application of the new values.
+- **Not yet confirmed**: a live edit while an actual client is *actively
+  mirroring* (real AirPlay session, not `-replay`) — the mechanism should
+  be sound (`-replay`'s own render/decode counts kept incrementing
+  uninterrupted across an edit in the flawed test above, and the property
+  change itself doesn't touch pipeline state), but this specific
+  combination hasn't been directly observed yet.
+
+**Provisioning**: new `provisioning/files/etc/default/uxplay` (config,
+all-zero default). `provisioning/setup.sh` only installs this file if it
+doesn't already exist (must not clobber a hand-tuned config on re-run,
+unlike every other provisioned file). Also fixed a real pre-existing gap
+found while touching this: `zero-fb0` (2026-09-12 fix above) was deployed
+live via ad-hoc SSH commands but was **never added** to either
+`provisioning/setup.sh` or `image-builder/customize-root.sh` — a fresh
+`make image` or fresh `setup.sh` run would have silently shipped without
+it. Fixed in both scripts.
+
+**Verified**: no `-replay` regression (99.8%, matching baseline); startup
+apply confirmed via log + `drmdump`'s atomic-property reading (exact
+expected geometry math); live reload confirmed via the real daemon loop
+with clean timing separation. Deployed live via SSH to the running Pi
+(binary + config), not yet baked into a rebuilt image.
+
+**Not done / explicitly deferred**: phase 2 (a real UI for tuning this,
+instead of hand-editing the text config) — not started, per the user's own
+phasing.

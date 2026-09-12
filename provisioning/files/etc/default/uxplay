@@ -1,0 +1,10 @@
+# Pixels to inset the rendered picture on each edge, compensating for this
+# TV's own overscan/zoom cropping the outer edges of the HDMI signal. All
+# default to 0 (no compensation). Applied live -- edit and save, no restart
+# or reconnect needed (uxplay watches this file). See PROGRESS.md's
+# 2026-09-12 entry for how to measure your own TV's crop with
+# tools/drmpaint.c + tools/drmdump.c.
+UXPLAY_OVERSCAN_LEFT=0
+UXPLAY_OVERSCAN_RIGHT=0
+UXPLAY_OVERSCAN_TOP=0
+UXPLAY_OVERSCAN_BOTTOM=0

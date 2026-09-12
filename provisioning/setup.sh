@@ -98,10 +98,25 @@ install -d -o uxplay -g uxplay -m 0755 /home/uxplay
 echo "==> Installing the systemd unit"
 install -m 0644 files/etc/systemd/system/uxplay.service /etc/systemd/system/uxplay.service
 systemctl daemon-reload
+
+echo "==> Installing the overscan config (only if not already present -- this"
+echo "    file is meant to be hand-tuned live on a running device, see"
+echo "    PROGRESS.md's 2026-09-12 entry; re-running this script must not"
+echo "    clobber someone's already-tuned values back to all-zero)"
+if [ ! -f /etc/default/uxplay ]; then
+  install -d /etc/default
+  install -m 0644 files/etc/default/uxplay /etc/default/uxplay
+fi
 systemctl enable uxplay.service
 
 echo "==> Installing the uxrun A/V-sync tuning helper"
 install -m 0755 files/usr/local/bin/uxrun /usr/local/bin/uxrun
+
+echo "==> Installing the fbcon-blanking ExecStartPre helper (2026-09-12 fix --"
+echo "    was previously only ever deployed ad hoc over SSH, never actually"
+echo "    added here, so a fresh run of this script would have silently"
+echo "    shipped without it)"
+install -m 0755 files/usr/local/bin/zero-fb0 /usr/local/bin/zero-fb0
 
 cat <<'EOF'
 
