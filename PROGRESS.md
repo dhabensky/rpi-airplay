@@ -599,3 +599,72 @@ confidence rests on: the identical mechanism already being proven to work in
 production for the disconnect/frozen-frame case, a clean startup log with the
 correct plane-claim ordering, and a clean `-replay` regression run — not on
 an actual look at the screen.
+
+## 2026-09-12 (correction): the above fix DID NOT actually work; real fix found
+via a new pixel-level scanout tool
+
+**The tooling gap above is now closed.** `tools/drmdump.c` +
+`Dockerfile.drmdump-buildtest`: a small libdrm-based tool, cross-built the
+same way as `uxplay_debug`, that reads each DRM plane's real content straight
+from its dumb-buffer framebuffer via the atomic/universal-planes API
+(`drmModeGetPlane()->fb_id`, not the legacy per-CRTC `buffer_id`, which does
+**not** reliably track atomic commits on this driver — confirmed empirically:
+it kept reporting the same fb id across a plane update that the kmssink log
+showed had genuinely happened). Paired with `ffmpeg -f rawvideo` to convert
+the raw dump to a viewable PNG. This finally gives real, positive,
+pixel-level self-verification of what's actually on screen, closing the gap
+documented above (`ffmpeg kmsgrab` and a naive `/dev/fb0` read were both
+dead ends).
+
+**Using it immediately disproved the previous "fix."** The startup
+`video_renderer_blank_display_now()` call did run, and did briefly paint a
+real black frame on the primary plane (confirmed in the log: a new fb id
+appears) — but a scanout dump taken a few seconds later, once the pipeline
+had released DRM master, showed the boot console text, byte-for-byte
+unchanged from before the "fix" ran. **Root cause of the previous
+misdiagnosis:** the earlier `/dev/fb0` read that seemed to show "no change"
+(previous entry above) was tested at exactly the wrong moment — before vs.
+after a full paint-then-revert cycle, which of course looks identical either
+way. That test proved nothing; it wasn't evidence `/dev/fb0` is decoupled
+from the scanout, it just happened to compare two points where nothing had
+net-changed.
+
+**Actual mechanism**: the kernel's own fbcon owns `/dev/fb0` as a persistent
+buffer and reasserts its content back onto the DRM primary plane whenever no
+other client holds DRM master over that plane — including immediately after
+the throwaway blank pipeline releases it. Painting a transient frame can
+never win against this; the buffer itself has to be changed.
+
+**Real fix** (submodule commit reverting 85094e1; main repo commit
+`5d284ec`): a new `provisioning/files/usr/local/bin/zero-fb0` script,
+run via `ExecStartPre=` in `uxplay.service` before uxplay ever touches DRM.
+Reads the real geometry from `/sys/class/graphics/fb0/{virtual_size,
+bits_per_pixel}` and zeros exactly that many bytes. No UxPlay code needed at
+all — this was never a code bug, it was a leftover-state problem better
+solved at the provisioning layer.
+
+**Verified with actual pixel evidence, three separate checks**, each
+converted from a real scanout dump to PNG and visually confirmed solid
+black: (1) immediately after running the script, before uxplay starts; (2)
+after uxplay's pipelines start and settle into idle, waiting for a client;
+(3) mid-way through a real `-replay` session, with real video actively
+rendering on the overlay plane at the same time — the primary plane stayed
+black underneath throughout. No render/decode regression: 1961/1965 (99.8%),
+matching the existing healthy baseline.
+
+**Open follow-up, not yet checked**: the disconnect-time frozen-last-frame
+fix (2026-09-10, commit 5a84a7e) uses this exact same "throwaway
+force-modesetting blank pipeline" mechanism, just triggered on teardown
+instead of at startup. Given what was just found, it likely suffers the
+same "paints black, then fbcon reasserts" failure — worth re-verifying with
+this same drmdump tool before trusting it. Two things work in its favor that
+don't apply to the margins bug: `/dev/fb0` being permanently zeroed now
+means fbcon's own reassertion is harmless from now on (it restores black,
+not stale content), and the actual frozen-frame concern was about the
+**overlay** plane (the one real video renders onto), not the primary plane
+this mechanism targets — whether tearing down the main pipeline cleanly
+disables/hides the overlay plane on its own (independent of the blank
+pipeline entirely) has not been empirically confirmed. Next step if this is
+revisited: dump plane state right after a real disconnect and check the
+overlay plane's `fb_id` actually goes to 0 / the plane is removed from the
+composition.
