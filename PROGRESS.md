@@ -526,3 +526,76 @@ captured sessions (gitignored via `*.cap`, kept locally) — treat them as a
 growing regression corpus, not disposable debugging scratch: replay every one
 of them after any future `kmssink`/`v4l2h264dec` pipeline change, the same
 way `tools/test-reconnect-e2e.sh` already replays the reconnect-path capture.
+
+## 2026-09-12: boot-console text visible in pillarbox margins; fixed with two
+real bugs found (and fixed) along the way
+
+Real bug, not the aspect-ratio "bug" reported alongside it: a MacBook Pro's
+actual screen ratio (Mac14,9, 1662x1080 native decode caps, ratio ≈1.539) is
+genuinely not 16:9, confirmed via the decoder's negotiated caps, so pillarboxing
+on a 1920x1080 TV is correct behavior, not a bug — the real complaint was that
+the *margins* showed the kernel's boot console text instead of solid black.
+Root cause: kmssink's main pipeline draws onto a DRM **overlay** plane sized
+only to the content's actual dimensions (e.g. 1662x1080), not the full
+1920x1080 screen (see the `force-modesetting` removal above, 2026-09-11) — the
+**primary** plane underneath, still showing whatever the boot console last
+drew there, is never repainted, so it stays visible in whatever area the
+overlay plane doesn't cover, for however long the device has been up.
+
+Fixed with a new `video_renderer_blank_display_now()`, called once at process
+startup, reusing the existing "paint one black frame onto the primary plane
+via `force-modesetting` kmssink, then release" mechanism already used for the
+frozen-last-frame-after-disconnect fix (2026-09-10).
+
+**Two real bugs found while placing the call, both confirmed on real hardware
+rather than assumed — exactly the "verify positively, not just no-regression"
+methodology corrected earlier this session:**
+
+1. Calling it right after `video_renderer_start()` segfaulted. `logger` is a
+   module-level global in `video_renderer.c`, only set inside
+   `video_renderer_init()` — and the new call ran before `video_renderer_init()`
+   had ever been called (this was the very first `video_renderer_*` call in
+   the process). Confirmed via `gdb`: `SIGSEGV` in `pthread_mutex_lock()`,
+   called from `logger_log()`, called from `video_renderer_blank_display()`.
+2. Moving the call to strictly between `video_renderer_init()` and
+   `video_renderer_start()` (so `logger` is valid) fixed the crash but hit a
+   *second* real bug: a DRM-master conflict. `video_renderer_init()` itself
+   already drives the h264 pipeline's kmssink far enough to claim its overlay
+   plane — confirmed in the `GST_DEBUG` log, `kmssink_h264 ... connector id =
+   35 / crtc id = 97 / plane id = 98` appearing well before
+   `video_renderer_start()` ever runs. With that plane already claimed, the
+   blank pipeline's own `force-modesetting` grab for the primary plane failed:
+   `kmssink gstkmssink.c:805:configure_mode_setting: Failed to set mode:
+   Permission denied`.
+
+Final fix: call `video_renderer_blank_display_now()` strictly *before*
+`video_renderer_init()`, and give it the logger as an explicit parameter
+(setting the module's `logger` global itself) instead of depending on
+`video_renderer_init()` having already set it. Verified clean on real
+hardware: correct plane-claim ordering (blank pipeline claims plane 86 and
+fully releases it before the real h264 pipeline ever touches plane 98), zero
+permission errors, no crash. Replayed against the real stalled-mirror capture
+(`tools/captures/personalmac-stall-20260911.cap`): 99% render/decode ratio
+(1864/1866), matching the existing healthy baseline — no regression.
+
+**Visual/pixel-level self-verification remains an open tooling gap.** Two
+independent attempts to read the actual DRM scanout content without asking
+the user to look at the TV, both genuine dead ends:
+- `ffmpeg -f kmsgrab` — every tried pixel format (`bgr0`, `0rgb`, `rgb0`,
+  `0bgr`, `argb`, `abgr`, `rgba`, `bgra`) failed with "Invalid output format
+  for hwframe download", eventually "Function not implemented". Plane 86's
+  reported DRM format code doesn't decode to a valid ASCII fourcc — looks like
+  a real vc4/mesa driver quirk, not a flag/naming problem.
+- Direct `/dev/fb0` read (`vc4drmfb`, confirmed present via `dmesg`, 1920x1080
+  @16bpp) — byte-identical content sampled before and after the blank pipeline
+  ran and fully released. This buffer is evidently a separate, decoupled
+  fbdev-emulation buffer, not a live mirror of the actual DRM scanout —
+  reading it proves nothing about what's really on screen.
+No compiler exists on the live Pi to build a custom capture tool in place;
+cross-building one via the project's existing Docker/arm64 build
+infrastructure (same shape as how `uxplay_debug` itself is built) remains a
+real, not-yet-attempted option if this gap needs closing for good. For now,
+confidence rests on: the identical mechanism already being proven to work in
+production for the disconnect/frozen-frame case, a clean startup log with the
+correct plane-claim ordering, and a clean `-replay` regression run — not on
+an actual look at the screen.
