@@ -1,0 +1,13 @@
+# Diagnostic-only tool build, not part of the shipped image. Same pinned base
+# as Dockerfile.uxplay-buildtest, so it produces a real aarch64 binary on this
+# host the same way uxplay_debug does (colima's VM is native arm64 on Apple
+# Silicon -- no cross-compilation flags needed).
+FROM debian@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libdrm-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY tools/drmdump.c /src/drmdump.c
+WORKDIR /src
+RUN gcc -O2 -Wall -o drmdump drmdump.c $(pkg-config --cflags --libs libdrm)

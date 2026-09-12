@@ -1,0 +1,30 @@
+#!/bin/sh
+# Zero the DRM primary plane's persistent fbcon buffer before uxplay starts.
+#
+# The kernel's own fbcon owns /dev/fb0 and reasserts its content back onto
+# the DRM primary plane whenever no other client holds DRM master over that
+# plane -- including right after any kmssink pipeline (uxplay's own, or a
+# throwaway one) releases it. Left alone, that buffer still holds whatever
+# the boot console last drew, which then shows up in any screen area
+# uxplay's own kmssink doesn't cover (e.g. pillarbox margins for non-16:9
+# source content). A throwaway "paint one black frame via kmssink, then
+# release" pipeline does NOT fix this: it paints over the plane transiently.
+# but fbcon immediately restores its own buffer's content the moment master
+# is released -- confirmed via a real DRM scanout dump (tools/drmdump.c),
+# see PROGRESS.md, 2026-09-12. Zeroing the buffer itself, once, before
+# anything else touches DRM, fixes it at the actual source: whatever fbcon
+# restores from then on is already black.
+set -e
+
+FB=/dev/fb0
+[ -c "$FB" ] || exit 0
+
+SIZE_SPEC="$(cat /sys/class/graphics/fb0/virtual_size 2>/dev/null)" || exit 0
+W="${SIZE_SPEC%,*}"
+H="${SIZE_SPEC#*,}"
+BPP="$(cat /sys/class/graphics/fb0/bits_per_pixel 2>/dev/null)" || exit 0
+
+SIZE=$((W * H * BPP / 8))
+[ "$SIZE" -gt 0 ] || exit 0
+
+dd if=/dev/zero of="$FB" bs="$SIZE" count=1 2>/dev/null
