@@ -852,3 +852,76 @@ so it's baked into the *next* image build, not just this live device
 **Open**: the currently-flashed image doesn't have this fix baked in (only
 deployed live via SSH after flashing) — the pipeline fix is committed for
 the *next* `make image` + reflash, whenever that happens.
+
+## 2026-09-12 (later still): frozen last frame after disconnect, fixed for real
+
+Reported directly: "when screen mirroring ends, the last frame remains —
+should show a black screen." This had already been "fixed" once, a long
+time before this session (submodule history: `5a84a7e`, tried unconditional
+`video_renderer_stop()` on every disconnect, reverted for breaking
+re-mirroring entirely — `1992e08`), leaving only an *eventual* blank via the
+`-reset N` second client-silence timeout reaching `video_renderer_destroy()`.
+Not instant, which is what was actually asked for this time — and the
+pipeline genuinely can't be torn down on a plain disconnect (that's exactly
+what broke re-mirroring before), so any fix has to work without touching
+pipeline state at all.
+
+The mechanism: `kmssink`'s `render-rectangle` is a live-settable GObject
+property (already used by the overscan feature above), so shrink/move it on
+disconnect and restore it in `video_renderer_choose_codec()` when a new
+connection actually starts decoding. Two non-obvious problems, both found by
+reading `gst-plugins-bad`'s actual `sys/kms/gstkmssink.c` source rather than
+guessing from behavior:
+
+1. Setting the property alone is a no-op for anyone currently looking at the
+   screen — `gst_kms_sink_show_frame()` (where the real `drmModeSetPlane`
+   commit happens) only runs when kmssink processes a buffer, and with no
+   client connected, no new buffer ever arrives. Confirmed empirically via
+   `tools/drmdump.c` polling the real DRM plane properties every second
+   throughout a simulated disconnect (`UX_RECONNECT_MODE=real` + new
+   `UX_RECONNECT_PAUSE_MS` test hook to hold the gap open long enough to
+   observe): the on-screen rectangle never moved, no matter what the
+   property was set to. Fix: also call `gst_video_overlay_expose()`
+   (standard `GstVideoOverlay` interface — confirmed kmssink implements it),
+   which re-runs `show_frame()` against the last held buffer, no new buffer
+   needed.
+2. A first attempt at the "hidden" rectangle, `<0,0,1,1>` (shrink to a
+   single pixel), still didn't visibly change anything even with `expose()`
+   wired up. `gst_kms_sink_show_frame()` fits the video into the configured
+   rectangle via `gst_video_sink_center_rect()` (aspect-preserving), and if
+   *either* resulting dimension rounds down to `<= 0` — exactly what happens
+   fitting a ~1920x1080 source into a literal 1x1 box — it logs "video is
+   out of display range" and skips the DRM commit entirely, leaving
+   whatever was already on screen untouched. This silent skip is what every
+   earlier "confirmed via log that expose() ran, but drmdump still shows
+   the old geometry" observation was actually seeing. Fixed by using a
+   full-size rectangle instead (so the aspect-preserving fit is always
+   comfortably positive in both dimensions, same as a normal overscan
+   rectangle) positioned with a large negative X — the only overflow clamp
+   in that function is for the right/bottom edge, never for a negative left
+   edge, so the width survives unclamped and the plane just ends up drawn
+   somewhere the CRTC can't see it.
+
+**Verified positively, not just "no error in the log"**: `tools/drmdump.c`
+polling the real DRM plane's atomic properties once a second across a
+simulated real disconnect+reconnect showed the on-screen rectangle go from
+the normal position (`CRTC_X=154 CRTC_W=1612`), to fully off-screen at
+disconnect (`CRTC_X=-1791 CRTC_W=1662`, i.e. `X+W` still negative), back to
+the exact same normal position at reconnect — every single second polled
+across three separate runs, including after the final logging/comment
+cleanup pass (re-verified against the literal binary being deployed, not
+just "should still work"). Also re-ran the existing decoder-wedging
+regression suite (`tools/test-reconnect-e2e.sh`) against the fixed binary:
+kmssink kept importing new DMA-BUFs at the same rate after reconnect as
+before (122→124 render events in the final run) — no regression in the
+unrelated bug that suite guards against.
+
+`UX_RECONNECT_PAUSE_MS` (new env var, `replay_do_reconnect()`'s `real`
+mode) is permanent test infrastructure now, alongside the existing
+`UX_RECONNECT_AT_MS`/`UX_RECONNECT_MODE` — it's what made the drmdump-based
+positive verification possible at all, by holding open a gap between
+disconnect and reconnect that's normally instantaneous.
+
+Deployed live via SSH to the running Pi (`/usr/local/bin/uxplay_debug`,
+checksum-verified against the local build) for immediate relief; not yet
+baked into a rebuilt image (submodule `dd95564`, main repo `9163da0`).
