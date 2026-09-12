@@ -776,3 +776,79 @@ with clean timing separation. Deployed live via SSH to the running Pi
 **Not done / explicitly deferred**: phase 2 (a real UI for tuning this,
 instead of hand-editing the text config) — not started, per the user's own
 phasing.
+
+## 2026-09-12 (later): `make image` bakes in WiFi/overscan; image built,
+verified, and flashed; interactive SSH was running real dietpi-update
+
+**`personal.env` mechanism** (main repo `61d2d39`): "build an image" used to
+mean "build an image, then mount it and hand-edit WiFi creds, then
+hand-edit overscan over SSH" — a standing complaint. New optional, gitignored
+`personal.env` (template: `personal.env.example`) with `WIFI_SSID`/
+`WIFI_PASSWORD`/`OVERSCAN_{LEFT,RIGHT,TOP,BOTTOM}`, read automatically by
+`make image` (wired via `$(wildcard personal.env)`) and threaded into
+`image-builder/customize-boot.sh` (WiFi → `dietpi-wifi.txt`) and
+`customize-root.sh` (overscan → `/etc/default/uxplay`). Absent, the image
+is identical to before.
+
+Real bug caught while testing, not assumed: the first WiFi-injection draft
+used `sed -i "...c\\..."` to rewrite the credential lines. Sed's own
+change/substitute commands treat a backslash in the REPLACEMENT text as an
+escape character and consume it — this silently corrupted the
+DietPi-documented `'\''` escape for a literal single quote in an
+SSID/password, producing `'''` instead. Confirmed empirically inside the
+*actual Debian build container* (not assumed from local macOS testing,
+whose BSD sed has unrelated `-i`/`c\` quirks of its own that would have
+masked this entirely). Fixed by switching to `awk`, whose plain string
+printing doesn't reinterpret backslashes; re-verified with SSID/password
+values containing single quotes.
+
+Also had to re-pin 3 more aged-out `apt-packages.lock` versions
+(`libcurl3t64-gnutls`, `libglib2.0-0t64`, `libmbedcrypto16`) to get a clean
+build at all — same recurring drift class as the earlier `libasound2`
+re-pin (main repo `9d41f7d`). Check `apt-cache policy <pkg>` inside the
+build container whenever `make image` fails with "Version ... was not
+found".
+
+**Verified on the actual assembled `.img`, not just the build log**:
+re-extracted the built image's own partitions and confirmed both the real
+WiFi credentials and the user's actual live-tuned overscan values
+(16/16/16/16 — pulled from the Pi's live `/etc/default/uxplay` rather than
+the earlier rough photo-based estimate) landed correctly.
+
+**Image built and flashed** (confirmed physical action, not simulated):
+`build/rpi-airplay.img` (~1.2GB) written to the SD card via `dd`, following
+README's documented procedure (`diskutil unmountDisk` before and after).
+
+**New bug found on the resulting real first boot, fixed the same session**:
+every interactive SSH login was synchronously running the real
+`dietpi-update` (and would eventually run `dietpi-software` too) —
+DietPi's own `dietpi-firstboot.bash` unconditionally does `echo 0 >
+/boot/dietpi/.install_stage` during a genuine hardware first boot,
+confirmed via `journalctl` on the actual device. This is *why* an earlier
+session's fix (baking `.install_stage=2` into the image at build time,
+intended to skip DietPi's redundant first-run software wizard) never
+actually worked on real hardware — this project's offline chroot/nspawn
+testing never runs `dietpi-firstboot.service` at all, so that fix looked
+correct in every test that could be run, while doing nothing on the one
+environment that matters. With the stage stuck at 0,
+`/etc/bashrc.d/dietpi.bash`'s `dietpi-login` hook runs
+`Run_DietPi_First_Run_Setup()` on *every* interactive login (not just
+once), synchronously executing `dietpi-update` on the login session itself
+— the actual "SSH wastes my time" symptom.
+
+Fixed with a new oneshot systemd unit (`dietpi-skip-firstrun.service`,
+`After=dietpi-firstboot.service`) that force-resets `install_stage` back to
+2 on every boot — this appliance's setup is fully baked in at image-build
+time, there's no interactive software-selection step for a human to ever
+run, so there's no reason not to just always force this. Deployed live to
+the just-flashed device and verified with a real interactive SSH login:
+`.install_stage` reads 2, normal DietPi banner shows immediately, no
+`dietpi-update` run, ~1.8s total. Also added to both `provisioning/setup.sh`
+(live-Pi path, `systemctl enable --now`) and `image-builder/customize-root.sh`
+(offline chroot path, direct symlink enable, same pattern as `uxplay.service`)
+so it's baked into the *next* image build, not just this live device
+(main repo `3bc7e5b`).
+
+**Open**: the currently-flashed image doesn't have this fix baked in (only
+deployed live via SSH after flashing) — the pipeline fix is committed for
+the *next* `make image` + reflash, whenever that happens.
