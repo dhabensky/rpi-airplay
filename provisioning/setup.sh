@@ -97,7 +97,15 @@ install -d -o uxplay -g uxplay -m 0755 /home/uxplay
 
 echo "==> Installing the systemd unit"
 install -m 0644 files/etc/systemd/system/uxplay.service /etc/systemd/system/uxplay.service
+
+echo "==> Installing the DietPi first-run-wizard skip (2026-09-12 fix -- without"
+echo "    this, every interactive SSH login synchronously runs the real"
+echo "    dietpi-update/dietpi-software, since dietpi-firstboot.bash resets"
+echo "    .install_stage to 0 on every real hardware boot regardless of what's"
+echo "    baked into the image; see PROGRESS.md's 2026-09-12 entry)"
+install -m 0644 files/etc/systemd/system/dietpi-skip-firstrun.service /etc/systemd/system/dietpi-skip-firstrun.service
 systemctl daemon-reload
+systemctl enable --now dietpi-skip-firstrun.service
 
 echo "==> Installing the overscan config (only if not already present -- this"
 echo "    file is meant to be hand-tuned live on a running device, see"

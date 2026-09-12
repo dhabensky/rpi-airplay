@@ -237,6 +237,15 @@ mkdir -p "$work/etc/systemd/system/multi-user.target.wants"
 ln -sf /etc/systemd/system/uxplay.service \
   "$work/etc/systemd/system/multi-user.target.wants/uxplay.service"
 
+echo "==> Enabling dietpi-skip-firstrun.service (2026-09-12 fix -- without this,"
+echo "    every interactive SSH login on a real boot synchronously runs the"
+echo "    real dietpi-update/dietpi-software, since dietpi-firstboot.bash"
+echo "    resets .install_stage to 0 on every real hardware boot regardless"
+echo "    of what's baked into the image at build time; see PROGRESS.md's"
+echo "    2026-09-12 entry for the full trace)"
+ln -sf /etc/systemd/system/dietpi-skip-firstrun.service \
+  "$work/etc/systemd/system/multi-user.target.wants/dietpi-skip-firstrun.service"
+
 echo "==> Enabling persistent journald logging (DietPi default is volatile --"
 echo "    /run tmpfs only, wiped on power-off -- learned the hard way when a"
 echo "    first-boot's console errors turned out to be unrecoverable from the"

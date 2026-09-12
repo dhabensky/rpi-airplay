@@ -1,0 +1,22 @@
+[Unit]
+Description=Force DietPi's install_stage to 2 (skip the interactive first-run wizard)
+# This appliance's whole setup is already baked in at image-build time
+# (packages, users, config, uxplay itself) -- there is no "software to
+# choose" step for a human to run. Without this, dietpi-firstboot.bash's
+# own unconditional `echo 0 > .install_stage` (part of a real hardware
+# boot, never exercised by this project's offline chroot/nspawn testing,
+# which is why this went unnoticed for a while) makes EVERY interactive
+# SSH login run dietpi-login -> Run_DietPi_First_Run_Setup(), which
+# synchronously runs the real `dietpi-update`/`dietpi-software` on the
+# login session -- exactly the "SSH wastes my time" symptom this fixes.
+# See PROGRESS.md's 2026-09-12 entry for the full trace.
+After=dietpi-firstboot.service
+Before=dietpi-postboot.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'echo 2 > /boot/dietpi/.install_stage'
+
+[Install]
+WantedBy=multi-user.target
