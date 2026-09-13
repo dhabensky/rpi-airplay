@@ -1,7 +1,8 @@
 # Bug: audio dies permanently after a burst of repeated SETUP requests (YouTube track-switching)
 
-Status: **confirmed reproducible, long-standing, root cause not yet
-pinned down — diagnostic capture needed before a fix can be planned**
+Status: **confirmed reproducible, long-standing; strongest root-cause
+hypothesis found (section 5) via upstream comparison; fix proposed
+(section 6), not yet implemented — awaiting review**
 
 ## 1. Description (as reported and directly reproduced)
 
@@ -87,7 +88,7 @@ which branch actually executes live:
   coincidental; not re-checked on the second, cleaner reproduction.
 - This general area (`raop_rtp_start_audio()`'s redundant-SETUP handling)
   is already flagged as a known risk in
-  `docs/video-audio-threading-and-state-machine.md` section 5, item 2 --
+  `docs/audio-pipeline.md`, item 2 --
   written before this specific bug was reproduced live, from reading the
   code alone.
 
@@ -98,7 +99,7 @@ thread count genuinely grows unboundedly across repeated occurrences, and
 whether a real `TEARDOWN(96)` request precedes each of these SETUPs.
 
 **Second, more concrete hypothesis found while documenting the audio
-pipeline** (`docs/video-audio-threading-and-state-machine.md` section 5):
+pipeline** (`docs/audio-pipeline.md`):
 `audio_renderer_start()` (httpd thread, called inline from the SETUP
 handler, `audio_renderer.c:293`) and `audio_renderer_render_buffer()`'s
 own self-heal-on-push-failure path (`audio_renderer.c:377-397`, RAOP audio
@@ -123,9 +124,145 @@ tonight non-representative) -- e.g. enable debug logging in the
 of an already-fresh session) rather than stopping and manually restarting
 a session the user is actively using. This should distinguish the two
 live hypotheses above (thread never joined vs. legitimate repeated
-teardown+setup) before any fix is designed.
+teardown+setup) before any fix is designed. **Still worth doing** to
+positively confirm section 5 below before shipping the fix, even though
+section 5 no longer needs it to be *proposed*.
+
+## 5. Strongest hypothesis (found via upstream comparison): `conn_request()`
+
+While preparing `docs/upstream-comparison.md`, found that a prior session
+(submodule `268e168`, 2026-09-11) already left a comment in
+`lib/raop.c:310-314` describing this exact failure mode, never actually
+fixed -- see `docs/audio-pipeline.md`'s "The `conn_request()` finding"
+section for the full trace. Summary: `conn_request()` (httpd thread),
+when classifying a new `AIRPLAY`-type connection (`X-Apple-Session-ID`
+header present), **unconditionally** tears down an existing `RAOP`-type
+connection's audio/mirror/NTP services if one exists
+(`raop.c:298-324`) -- with no check for whether that's a genuinely
+different client or the same client's own auxiliary connection. This is
+**upstream's own original behavior**, byte-identical to pristine
+`v1.73.7` -- not something either fork introduced.
+
+This explains the observed signature better than either hypothesis in
+section 3: if switching tracks causes the client to open a fresh
+`AIRPLAY`-type connection, this code kills the just-negotiated audio UDP
+socket on the *other* connection -- exactly the scenario the 2026-09-11
+comment itself predicted ("if this fires right after an AUDIO SETUP
+response, the client was told a port that's already been torn down by
+the time it sends anything there"). It also explains why the *existing*
+self-heal in `audio_renderer_render_buffer()` (section 3's second
+hypothesis) never kicks in: that only fires when a push is attempted and
+fails; if the client's packets never arrive at all because it was told a
+dead port, there's nothing to self-heal from.
+
+## 6. Fix Plan
+
+Two independent, narrowly-scoped fixes -- not a rewrite:
+
+**Fix A (primary, addresses section 5):** don't tear down an existing
+`RAOP` connection's audio/mirror/NTP services in `conn_request()` when
+the new `AIRPLAY`-type connection is plausibly the *same* client's own
+auxiliary connection. Extract the decision into a small, pure,
+independently-testable helper:
+
+```c
+/* Returns true if the existing RAOP connection's audio/mirror/NTP
+ * services should be torn down because the new AIRPLAY-type connection
+ * represents a genuinely different client; false if it's plausibly the
+ * same client's own auxiliary connection (e.g. opened when switching
+ * tracks within an ongoing mirror session) and the existing session
+ * should be left alone. */
+bool raop_should_teardown_existing_connection(const char *existing_remote_ip,
+                                               const char *new_remote_ip);
+```
+
+Implementation: compare `existing_remote_ip`/`new_remote_ip` (both already
+available at the call site via `utils_ipaddress_to_string()`, the same
+helper the neighboring `-nohold` branch already uses a few lines above,
+`raop.c:273-274`) -- different IP means teardown (preserves upstream's
+actual intent: a genuinely new client should preempt), same IP means skip
+it. `conn_request()` calls this before `raop.c:301-323`'s teardown block
+instead of running it unconditionally.
+
+**Known limitation, to confirm via section 4's diagnostic capture**: IPv6
+privacy-extension address rotation could in principle defeat an IP-based
+match. Believed low-risk for this specific scenario (LAN-local
+mDNS-discovered AirPlay traffic typically uses a stable interface
+address, not a WAN-facing privacy address), but not proven -- if the
+diagnostic capture shows the two connections arrive from *different*
+remote addresses despite being the same physical client, this heuristic
+needs a different correlator (e.g. stashing whatever client-identifying
+data becomes available once parsed, such as the `deviceID` seen in
+pairing-related plist bodies, `raop_handlers.h:642-643` -- not available
+at `conn_request()`'s point in the request lifecycle today without
+additional plumbing).
+
+**Fix B (secondary, addresses the section 3 cross-thread hazard
+independent of whether Fix A alone resolves the bug):** serialize
+`audio_renderer.c`'s pipeline-mutating calls (`audio_renderer_start()`,
+and the self-heal path's `audio_renderer_stop()`+`audio_renderer_start()`
+pair) onto a single thread via `g_idle_add()`, the same
+already-established pattern this project uses elsewhere (the overscan
+`GFileMonitor` callback). Concretely: the httpd thread's call to
+`audio_renderer_start()` and the RAOP audio thread's self-heal call both
+become "post a request to run on the main thread's `GMainLoop`" instead
+of calling directly -- matching the architecture direction the user
+prefers (fewer threads touching shared pipeline state, not a better test
+harness papering over more of them). Low risk: these calls are already
+infrequent (once per SETUP, or rarely on a genuine push failure), so
+deferring them by one main-loop iteration has no perceptible latency
+cost, unlike the mistake made with `video_renderer_hide_video()` earlier
+tonight (which deferred a *visible-effect* call, not applicable here).
+
+Fix A is expected to resolve the bug on its own if section 5's hypothesis
+is confirmed; Fix B closes a real, independently-identified gap
+regardless, and is cheap enough to include either way.
+
+## 7. Verification Plan
+
+**Existing regression suite** (must still pass, no behavior change
+expected for the normal single-connection case):
+`tools/test-reconnect-e2e.sh`, `tools/test-render-health-e2e.sh`.
+
+**New test needed for Fix A -- `-replay` cannot cover this.**
+`-replay` calls `video_process`/`audio_process`/`video_reset` directly,
+entirely bypassing `raop.c`/`httpd.c` -- structurally incapable of
+exercising `conn_request()`'s connection-type classification, since that
+requires real RTSP-level requests over real sockets (see
+`docs/upstream-comparison.md`'s `uxplay.cpp` section on what `-replay`
+does and doesn't cover). Two options, not mutually exclusive:
+
+1. **Pure unit test (recommended first step, fully autonomous, no
+   hardware/network/crypto needed)**: extract
+   `raop_should_teardown_existing_connection()` (Fix A) as a small,
+   dependency-free pure function and test it directly, following the
+   exact pattern this project already has but never wired into any
+   runner -- `tests/test_bus_callback_null_renderer.c` (`#include`s the
+   target `.c` file directly, stubs `logger_log`, asserts behavior).
+   **Found while designing this**: that existing test isn't referenced
+   from any `CMakeLists.txt`, Makefile, or script anywhere in either repo
+   -- it's never actually been run automatically since it was added.
+   Fixing that (a small `tests/CMakeLists.txt` or a
+   `tools/run-unit-tests.sh`, compiling and running every `tests/*.c`) is
+   itself a worthwhile, low-risk test-framework extension, and would
+   finally exercise the existing test too.
+2. **Higher-fidelity end-to-end test (optional, higher effort)**: a real
+   RTSP client simulator opening a genuine second connection against the
+   real server. Deliberately not proposed as a requirement here: AirPlay's
+   real handshake involves `fairplay_setup`/`fairplay_handshake`
+   (`raop_handlers.h:562,574`) and AES key exchange before a SETUP is
+   normally reachable, so a faithful simulator is meaningfully more work
+   than option 1 for the same confidence in the specific logic being
+   fixed. Worth reconsidering only if option 1 can't be made to cover the
+   real risk (e.g. if the actual bug turns out to depend on exact protocol
+   timing option 1 can't represent).
+
+**Manual confirmation** (real client, real network): repeat the original
+YouTube track-switch reproduction, confirm audio survives at the
+`-reset N` timescale expected, not permanently. Per this project's
+standing rule, this closes the loop but doesn't substitute for the
+automated checks above -- `-replay`/unit tests must pass first.
 
 ## Fixed in
 
-*(not yet fixed -- root cause not yet pinned down; fill in once the
-diagnostic step above narrows it down and a fix is applied)*
+*(not yet fixed -- fix proposed above, not yet implemented or reviewed)*
