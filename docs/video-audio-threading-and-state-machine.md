@@ -11,7 +11,7 @@ this, not recalled from memory.
 
 This is a **description of what exists**, not a proposal. Where the
 architecture is fragile or actively racy, that's called out explicitly in
-section 5, but no fix is proposed here — see the fork this document sets up
+section 6, but no fix is proposed here — see the fork this document sets up
 in the "Where this leaves us" section at the end.
 
 ## 1. Threads
@@ -22,9 +22,9 @@ plus GStreamer's own internal threads and the process's main thread:
 | Thread | Created at | Responsibility |
 |---|---|---|
 | **Main thread** | (process start) | Runs `main()`'s `reconnect:` loop: calls `main_loop()` (blocks in `g_main_loop_run()`), and on return, conditionally does the full pipeline destroy+rebuild (`uxplay.cpp:3667-3700`). All `GMainLoop` timeout/idle/bus-watch callbacks registered inside `main_loop()` also run here, since they're dispatched by the loop this thread drives. |
-| **httpd thread** | `httpd.c:699`, once, for the process lifetime | The **only** thread that runs `httpd_thread()` (`httpd.c:360`) — a single `select()`-based event loop handling **every** RTSP/HTTP connection and request serially (SETUP, TEARDOWN, RECORD, GET/SET_PARAMETER, ...). Dispatches into `raop_handlers.h`'s per-request-type handlers. |
+| **httpd thread** | `httpd.c:699`, once, for the process lifetime | The **only** thread that runs `httpd_thread()` (`httpd.c:360`) — a single `select()`-based event loop handling **every** RTSP/HTTP connection and request serially (SETUP, TEARDOWN, RECORD, GET/SET_PARAMETER, ...). Dispatches into `raop_handlers.h`'s per-request-type handlers. **Also touches the audio GStreamer pipeline directly**: the SETUP handler for an audio stream (`raop_handlers.h:1027`) calls `audio_get_format()` → `audio_renderer_start()` (`uxplay.cpp:2851`) inline, in the very same request handler that also calls `raop_rtp_start_audio()` — see section 5. |
 | **RAOP mirror thread** | `raop_rtp_mirror.c:932`, once per mirror session | Runs `raop_rtp_mirror_thread()` — reads incoming video RTP/H264 data, decrypts, calls `video_set_codec()` (→ `video_renderer_choose_codec()`, `raop_rtp_mirror.c:638,717`) and `video_process()` (→ `video_renderer_render_buffer()`, `uxplay.cpp:2725`). |
-| **RAOP audio thread** | `raop_rtp.c:705`, (re)created per `raop_rtp_start_audio()` call | Runs `raop_rtp_thread_udp()` — reads incoming audio RTP, decrypts, calls `audio_process()` (→ `audio_renderer_render_buffer()`). Exits when `raop_rtp->running` goes false (`raop_rtp.c:270-273`); a **redundant SETUP while this thread has already exited** re-creates it from scratch with fresh ports (`raop_rtp.c:661-663`, guard only fires if `running \|\| !joined`) — this is the mechanism behind tonight's "audio SETUP loops with a fresh port every time" incident. |
+| **RAOP audio thread** | `raop_rtp.c:705`, (re)created per `raop_rtp_start_audio()` call | Runs `raop_rtp_thread_udp()` — reads incoming audio RTP, decrypts, calls `audio_process()` (→ `audio_renderer_render_buffer()`, `raop_rtp.c:631`) and, via `raop_rtp_process_events()`, `audio_set_volume`/`audio_flush` (`raop_rtp.c:314-322`) — i.e. this thread owns essentially all per-buffer audio rendering calls except `audio_renderer_start()` itself (see above). Exits when `raop_rtp->running` goes false (`raop_rtp.c:270-273`); a **redundant SETUP while this thread has already exited** re-creates it from scratch with fresh ports (`raop_rtp.c:664`, guard only fires if `running \|\| !joined`) — this is the mechanism behind the 2026-09-13 "audio dies after a burst of repeated SETUP" bug (`bugs/2026-09-13-audio-dies-on-repeated-track-switch-setup.md`, still open). |
 | **RAOP NTP thread** | `raop_ntp.c:437` | Clock sync only; not relevant to rendering state. |
 | **video-blank thread** (`g_blank_display_thread`) | `video_renderer.c:1200`, ad hoc, joined before the next pipeline init (`video_renderer.c:991-994`) | Legacy "throwaway videotestsrc pipeline" blanking mechanism (`video_renderer.c:965-1042`), used by `video_renderer_destroy()`'s blanking call on a **full** reconnect/teardown. Not used by tonight's `video_renderer_hide_video()` (a different, newer mechanism — see below). |
 
@@ -43,7 +43,7 @@ calls the *same* production callbacks (`video_process`/`audio_process`,
 `video_reset`) a real RAOP mirror/audio thread would — but from a single
 thread, with no real network jitter and no real concurrent httpd-thread
 activity. This is why `-replay` has repeatedly failed to reproduce
-threading-timing bugs this session (see section 5): it collapses several
+threading-timing bugs this session (see section 6): it collapses several
 independently-racing real threads into one, removing the race entirely
 rather than exercising it.
 
@@ -233,8 +233,104 @@ noticing missed keepalives. Nothing unifies them into one state
 transition table today — they're two separately-evolved code paths that
 happen to both eventually affect the same `renderer`/pipeline.
 
-## 5. Known race windows (concrete, already observed tonight — not
-hypothetical)
+## 5. Audio pipeline
+
+Structurally simpler than video (no DRM planes, no overscan/hide
+mechanism, no `HIDDEN` state) but with its own two-thread hazard that
+directly matters for the currently-open
+`bugs/2026-09-13-audio-dies-on-repeated-track-switch-setup.md`
+investigation. All facts below are from `renderers/audio_renderer.c`
+(482 lines, read in full) and the same `lib/raop_rtp.c` /
+`lib/raop_handlers.h` call sites already cited in sections 1 and 4.
+
+### Two separate "audio" state machines, easy to conflate
+
+This codebase actually has **two independent audio lifecycles**, owned
+by different files and different threads, that only interact indirectly:
+
+1. **The RTP-receiving layer** (`lib/raop_rtp.c`): a UDP socket pair +
+   `raop_rtp_thread_udp()` thread, tracked by `raop_rtp->running`/`joined`.
+   This is what a "SETUP" request creates or reuses (`raop_rtp_start_audio()`,
+   section 1's table). It only knows about encrypted RTP packets on the
+   wire — nothing about GStreamer.
+2. **The GStreamer rendering layer** (`renderers/audio_renderer.c`): the
+   module-static `renderer` pointer + per-format pipelines, built once at
+   startup and switched between by `audio_renderer_start()`. This is what
+   actually decodes and plays sound.
+
+A SETUP request's handler (httpd thread, `raop_handlers.h:1027` on)
+touches **both**, in sequence, in the same function: `audio_get_format()`
+(→ `audio_renderer_start()`, layer 2) first, then `raop_rtp_start_audio()`
+(layer 1). They are two separate calls with no shared lock between them,
+into two separately-synchronized (or unsynchronized) subsystems.
+
+### GStreamer pipeline construction (per format)
+
+`audio_renderer_init()` (`audio_renderer.c:131`, called once at startup,
+main thread) builds **one static `gst_parse_launch()` pipeline per audio
+format** (`NFORMATS = 2` in practice — AAC-ELD and ALAC; PCM/AAC-LC exist
+in the array but are never seen from a real client) and keeps all of them
+alive for the process lifetime in `renderer_type[]`:
+
+```
+appsrc name=audio_source
+  ! queue max-size-time=300000000 (300ms cap, non-leaky)
+  ! avdec_aac | avdec_alac   (format-specific decoder, if the plugin's present)
+  ! audioconvert
+  ! audioresample quality=10
+  ! volume name=volume
+  ! level
+  ! <audiosink>  (alsasink in production, sync=true/false depending on -av/-as)
+```
+
+`renderer` (module-static, `audio_renderer.c:56`) points at whichever of
+`renderer_type[]`'s pre-built pipelines is currently active; switching
+formats mid-session tears the old one down to `GST_STATE_NULL` and starts
+the new one (`audio_renderer_start()`, `audio_renderer.c:293`) — but for a
+**same-format** repeat call (exactly what a repeated SETUP for the same
+AAC-ELD stream is), the function does **nothing at all**: `if (id >= 0 &&
+renderer) { if (*ct != renderer->ct) { ...rebuild... } }` — same format
+means the inner rebuild never runs, so the GStreamer pipeline itself is
+untouched by a same-format redundant SETUP. Whatever breaks in the
+open audio-dies bug therefore isn't a GStreamer pipeline rebuild race on
+its own — see the next subsection for what else is possible.
+
+### State/protection table (audio-specific rows, same format as section 2)
+
+| State | Type | Written from | Read from | Protection |
+|---|---|---|---|---|
+| `renderer` (`audio_renderer.c:56`) | raw pointer | httpd thread (`audio_renderer_start()`) **and** RAOP audio thread (`audio_renderer_render_buffer()`'s self-heal path, see below, calls `audio_renderer_stop()`+`audio_renderer_start()` again) | RAOP audio thread (`audio_renderer_render_buffer()`, `audio_renderer_set_volume()`, `audio_renderer_flush()`) | **None.** Unlike video's `renderer` (written by exactly one non-main thread), audio's `renderer` can be written by **two different threads** — httpd thread on every SETUP, RAOP audio thread on every self-heal — with no lock, no atomic, nothing. |
+| `gst_audio_pipeline_base_time` (`audio_renderer.c:34`) | `GstClockTime` | Same two threads, same two call sites | RAOP audio thread (`audio_renderer_render_buffer()`'s PTS-rebase logic, `audio_renderer.c:322-333`) | **None.** |
+| `render_audio`, `sync` (`audio_renderer.c:42,45`) | plain `gboolean` | httpd thread, inside `get_renderer_type()` (`audio_renderer.c:257`, called from `audio_renderer_start()`) | RAOP audio thread (`audio_renderer_render_buffer()`'s very first line gates on `render_audio`) | **None.** |
+
+### The race this points at for bug #10
+
+`audio_renderer_render_buffer()` (RAOP audio thread, called once per
+incoming audio packet — i.e. constantly, the hottest of these call sites)
+has its own **self-heal-on-failure** path (`audio_renderer.c:377-397`):
+if `gst_app_src_push_buffer()` returns anything other than
+`GST_FLOW_OK` (the comment there says this used to fail completely
+silently before this self-heal existed), it calls `audio_renderer_stop()`
+then `audio_renderer_start()` **itself, from the RAOP audio thread** —
+touching exactly the same `renderer` pointer and the exact same GStreamer
+pipeline state transitions (`gst_app_src_end_of_stream`,
+`gst_element_set_state`) that the **httpd thread** can be doing at the
+same moment for a concurrently-arriving SETUP request.
+
+Neither call site takes any lock. If a burst of rapid repeated SETUPs
+(the bug's trigger) causes the httpd thread to call `audio_renderer_start()`
+around the same time the RAOP audio thread's self-heal path decides to
+call `audio_renderer_stop()`/`audio_renderer_start()` on its own (plausible
+if the repeated SETUP/TEARDOWN churn on the `raop_rtp.c` layer disrupts
+timing enough to trip the self-heal condition), both threads could be
+tearing down and rebuilding the *same* `renderer`/pipeline concurrently —
+a direct analogue of section 4's video races, not yet confirmed as the
+actual cause (that needs the clean debug capture named in the bug's "Next
+diagnostic step"), but now a concrete, code-grounded hypothesis to check
+for, in addition to the `raop_rtp.c`-layer `joined`/`running` question
+already documented there.
+
+## 6. Known race windows (concrete, already observed — not hypothetical)
 
 Three real bugs, all from the same night, all traced to this lack of a
 single owner thread for pipeline state:
@@ -281,12 +377,16 @@ thread reaches directly into pipeline/element state, at a moment nothing
 in the code guarantees is safe, because nothing designates who owns that
 state or requires callers to hand off to them.
 
-## 6. What's NOT covered by this document
+## 7. What's NOT covered by this document
 
-- Audio pipeline's own internal structure (`audio_renderer.c`) — same
-  general shape (a `renderer` module-static, no dedicated lock) but not
-  independently re-verified line-by-line for this doc; flagged as a gap,
-  not asserted safe.
+- `raop_rtp.c`'s own internal locking (`run_mutex`) around `running`/
+  `joined`/volume/flush/metadata fields — real and correctly used *within*
+  that file (confirmed while writing section 5), just not exhaustively
+  re-derived here; only the *cross-file* gap (nothing in `audio_renderer.c`
+  or the httpd-thread call path takes any lock at all) is in scope.
+- ALSA's own internal buffering/thread-safety once `alsasink` hands data
+  off to it — treated as an opaque, correctly-synchronized dependency,
+  same as GStreamer-internal threading below.
 - HLS/coverart-playback pipeline paths (`playbin`/`playbin3`) — mentioned
   only where they intersect the mirror-mode code paths above.
 - Exact GStreamer-internal threading (how many threads `v4l2h264dec`/
@@ -300,10 +400,10 @@ state or requires callers to hand off to them.
 Per the user: the next step is a deliberate fork, not something this
 document decides —
 1. Invest in the test framework so it can actually reproduce
-   multi-threaded timing bugs like the three in section 5 (today,
+   multi-threaded timing bugs like the ones in section 6 (today,
    `-replay` structurally cannot, per section 1), **or**
 2. (stated preference) reduce the actual number of independent threads
-   that touch pipeline/renderer state, so most of section 5's bug class
+   that touch pipeline/renderer state, so most of section 6's bug class
    stops being possible by construction rather than needing to be caught
    by a better test.
 
