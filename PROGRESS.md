@@ -1039,3 +1039,66 @@ trying to fix is real and still open (see
 `bugs/2026-09-13-audio-resume-latency-after-teardown.md` for the full
 analysis) -- the next attempt should be planned against the new threading
 doc, not attempted same-session again.
+
+## 2026-09-13 (later): audio-dies bug fixed -- two narrowly-scoped fixes,
+new autonomous unit-test infrastructure
+
+Implemented the fix proposed in
+`bugs/2026-09-13-audio-dies-on-repeated-track-switch-setup.md`, unchanged
+from the proposal (submodule `fd473bb`):
+
+**Fix A**: `conn_request()` (`lib/raop.c`) unconditionally tore down an
+existing RAOP connection's audio/mirror/NTP services whenever a new
+AIRPLAY-type connection was classified -- upstream's own original
+behavior (see `docs/upstream-comparison.md`), and the actual root cause,
+per a 2026-09-11 comment that predicted this exact failure and was never
+acted on. New `lib/raop_conn_policy.c`/`.h`:
+`raop_should_teardown_existing_connection()`, a small pure function
+comparing remote address bytes -- a new connection from the same address
+as the existing one no longer kills its audio session; a genuinely
+different address still preempts as before. Fails toward the original
+always-teardown behavior on any uncertain input.
+
+**Fix B**: `audio_renderer_start()` (httpd thread, called inline from a
+SETUP handler) and `audio_renderer_render_buffer()`'s self-heal-on-
+push-failure path (RAOP audio thread) both wrote the same unlocked
+`renderer` pointer with zero synchronization. New
+`audio_renderer_start_deferred()`/`audio_renderer_self_heal_deferred()`
+serialize both onto the main thread via `g_idle_add()` (same pattern as
+the overscan `GFileMonitor` callback) -- used only at these two specific
+call sites, since e.g. `audio_renderer_destroy()` relies on the
+*synchronous* `audio_renderer_stop()` completing before it frees the
+structures `renderer` points into; deferring it universally would have
+been a new use-after-free.
+
+**New autonomous test infrastructure**: `tests/test_raop_conn_policy.c`
+unit-tests Fix A's pure function directly (genuinely zero dependencies --
+no GStreamer, no mocking, no hardware). While wiring it up, found
+`tests/test_bus_callback_null_renderer.c` (added in an earlier session)
+had never actually been built or run by anything -- `Dockerfile.unit-
+tests` + a new `make unit-tests` target finally exercises both, using
+`docker build` itself as the runner (a failing test fails the build).
+Needed one new stub (`install_av_sync_probe`) for the previously-orphaned
+test to even link.
+
+**Verified**: both new unit tests pass; `tools/test-reconnect-e2e.sh` and
+`tools/test-render-health-e2e.sh` both PASS against the fixed binary (99%
+render/decode ratio); a live `-replay` run confirms the deferred audio
+start fires correctly with zero errors. Deployed live via SSH to the
+running Pi, checksum-verified.
+
+**Explicitly NOT verified end-to-end** (per instruction, stated plainly):
+`-replay` cannot exercise `conn_request()` at all (bypasses
+`raop.c`/`httpd.c` entirely) -- Fix A's real-world effect against an
+actual second AirPlay-type connection was never reproduced this session,
+only unit-tested in isolation with synthetic inputs. The bug's actual
+real-world trigger (switching tracks on YouTube in a real mirrored
+browser tab) has not been re-tested against this fix. Section 4's own
+diagnostic capture (independently confirming *why* track-switching
+produces the SETUP burst) was never completed either -- the fix was
+designed directly from the `conn_request()` code-reading finding, not
+from that confirmation. No audio was literally listened to by a human
+during any of this verification. The image has not been rebuilt or
+reflashed with this fix -- the SD card was inside the running Pi, not the
+Mac's reader, so that step needs the card physically moved first. See the
+bug doc's own "Fixed in" section for the complete list.

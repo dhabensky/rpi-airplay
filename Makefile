@@ -46,6 +46,15 @@ uxplay: build/uxplay_debug
 vendor-gstreamer: build/vendor-gstreamer/MANIFEST.md
 base-image: build/dietpi-base.img
 
+# --- UxPlay unit tests (tests/*.c) -- fully autonomous, no hardware/network ---
+# `docker build` itself is the test runner: each test compiles and runs as
+# part of a RUN line (see Dockerfile.unit-tests), so a non-zero exit (an
+# assert() firing) fails the build. No -q: test PASS/FAIL output should be
+# visible, not swallowed.
+.PHONY: unit-tests
+unit-tests: Dockerfile.unit-tests $(shell find UxPlay/tests UxPlay/lib/raop_conn_policy.* UxPlay/renderers/audio_renderer.c -type f 2>/dev/null)
+	docker build -t unit-tests-buildtest -f Dockerfile.unit-tests .
+
 # --- uxplay binary (native arm64 via colima/Docker) ---
 build/uxplay_debug: Dockerfile.uxplay-buildtest $(shell find UxPlay -maxdepth 1)
 	@mkdir -p build

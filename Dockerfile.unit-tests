@@ -1,0 +1,37 @@
+# Compiles and RUNS this project's UxPlay unit tests (tests/*.c) inside the
+# same pinned Debian base as Dockerfile.uxplay-buildtest, so they build
+# against the exact library versions the real binary does. Each RUN line
+# below both compiles and immediately executes its test -- a non-zero exit
+# (an assert() firing, or a segfault) fails the `docker build` itself, so
+# `make unit-tests` succeeding at all IS the pass signal, matching the
+# existing Dockerfile.*-buildtest pattern's own smoke-check RUN lines.
+#
+# 2026-09-13: added for bugs/2026-09-13-audio-dies-on-repeated-track-
+# switch-setup.md's fix -- see tests/test_raop_conn_policy.c. Also finally
+# wires up tests/test_bus_callback_null_renderer.c, which existed since an
+# earlier session but was never actually built/run by anything.
+FROM debian@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential pkg-config \
+    libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY UxPlay /src/UxPlay
+WORKDIR /src/UxPlay/tests
+
+# Zero dependencies beyond the one function under test -- no GStreamer, no
+# mocking. See the test file's own header comment for why this matters.
+RUN gcc -O0 -g -Wall -Wextra -Werror \
+      -o /tmp/test_raop_conn_policy \
+      test_raop_conn_policy.c ../lib/raop_conn_policy.c && \
+    /tmp/test_raop_conn_policy
+
+# Pulls in renderers/audio_renderer.c directly (file-static symbols) --
+# needs GStreamer + the app plugin's headers (gst/app/gstappsrc.h).
+RUN gcc -O0 -g -Wall \
+      -o /tmp/test_bus_callback_null_renderer \
+      test_bus_callback_null_renderer.c \
+      $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-app-1.0) && \
+    /tmp/test_bus_callback_null_renderer

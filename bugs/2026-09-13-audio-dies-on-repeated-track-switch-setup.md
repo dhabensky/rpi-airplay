@@ -1,8 +1,8 @@
 # Bug: audio dies permanently after a burst of repeated SETUP requests (YouTube track-switching)
 
-Status: **confirmed reproducible, long-standing; strongest root-cause
-hypothesis found (section 5) via upstream comparison; fix proposed
-(section 6), not yet implemented — awaiting review**
+Status: **fix implemented and committed (section 6), unit-tested and
+regression-tested — NOT yet confirmed against the real-world trigger.
+See "Fixed in" at the bottom for exactly what is and isn't verified.**
 
 ## 1. Description (as reported and directly reproduced)
 
@@ -265,4 +265,52 @@ automated checks above -- `-replay`/unit tests must pass first.
 
 ## Fixed in
 
-*(not yet fixed -- fix proposed above, not yet implemented or reviewed)*
+**Submodule `fd473bb`** (branch `dhabensky-dev`), **main repo** commit
+bumping the submodule pointer plus `Dockerfile.unit-tests`/`Makefile`
+additions (2026-09-13). Both fixes from section 6 implemented as
+proposed, unchanged.
+
+**Verified**:
+- `tests/test_raop_conn_policy.c` (new, zero dependencies): all cases
+  pass -- same-address "don't tear down", different-address/missing-input
+  "do tear down (matches upstream)".
+- `tests/test_bus_callback_null_renderer.c` (existed since an earlier
+  session, was never actually wired into any build/runner until now):
+  passes.
+- `tools/test-reconnect-e2e.sh` and `tools/test-render-health-e2e.sh`:
+  both PASS against the fixed binary (99% render/decode ratio), no
+  regression.
+- A live `-replay` run confirms `audio_renderer_start_deferred()` fires
+  correctly on the main thread (the `"start audio connection, format
+  AAC-ELD 44100/2"` log line appears, sourced from inside
+  `audio_renderer_start()` itself) with zero errors logged.
+
+**Explicitly NOT verified end-to-end** (stating this plainly per
+instruction, not glossing over it):
+- **Fix A's actual real-world effect.** `-replay` cannot exercise
+  `conn_request()` at all -- it calls `video_process`/`audio_process`/
+  `video_reset` directly, entirely bypassing `raop.c`/`httpd.c`. This
+  session never drove two real, distinctly-typed RTSP connections against
+  the fixed binary; `raop_should_teardown_existing_connection()` was only
+  exercised via the unit test's synthetic byte arrays, never via an
+  actual second connection arriving at the real server.
+- **The original bug's real-world trigger** (switching tracks on YouTube
+  in an actual mirrored browser tab, from a real Mac) has not been
+  re-tested against this fix at all. Section 4's own diagnostic capture
+  (confirming *why* track-switching produces the observed SETUP burst)
+  was also never completed -- the fix was designed and implemented
+  directly from the `conn_request()` code-reading finding in section 5,
+  without that independent confirmation.
+- The higher-fidelity RTSP-protocol-level end-to-end simulator discussed
+  in section 7 as optional was not built.
+- No audio was literally listened to by anyone during any of this
+  session's verification -- "no errors logged" and "render/decode ratios
+  healthy" are the strongest signals available without a human present
+  at the TV.
+
+**Practical implication**: the live device (`192.168.1.34`) is currently
+running this fix, deployed via SSH, checksum-verified. A real test would
+need someone to actually mirror a browser tab and switch tracks while
+watching/listening. The image has not been rebuilt or reflashed with
+this fix -- the SD card was inside the running Pi, not the Mac's reader,
+so that step needs the card physically moved first.
