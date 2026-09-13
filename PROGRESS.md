@@ -1018,7 +1018,7 @@ plan) treated like a real task, (5) a documentation trace after the fix
 naming the exact revision.
 
 **New reference doc**:
-`docs/video-audio-threading-and-state-machine.md` -- the six real threads
+`docs/README.md` (split into `video-pipeline.md`/`audio-pipeline.md`/`framebuffers-and-drm-planes.md`/`upstream-comparison.md`) -- the six real threads
 in this process, every piece of shared render/pipeline state and what (if
 anything) synchronizes it (answer, almost everywhere: nothing), the
 informal video pipeline state machine, and the primary-vs-overlay DRM
