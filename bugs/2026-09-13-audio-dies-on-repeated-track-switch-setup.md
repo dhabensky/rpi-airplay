@@ -97,6 +97,23 @@ server-side silently failing to process what does arrive), whether the
 thread count genuinely grows unboundedly across repeated occurrences, and
 whether a real `TEARDOWN(96)` request precedes each of these SETUPs.
 
+**Second, more concrete hypothesis found while documenting the audio
+pipeline** (`docs/video-audio-threading-and-state-machine.md` section 5):
+`audio_renderer_start()` (httpd thread, called inline from the SETUP
+handler, `audio_renderer.c:293`) and `audio_renderer_render_buffer()`'s
+own self-heal-on-push-failure path (`audio_renderer.c:377-397`, RAOP audio
+thread, triggers on any non-`GST_FLOW_OK` from `gst_app_src_push_buffer()`)
+both write the *same* unlocked `renderer` pointer and perform the same
+`gst_app_src_end_of_stream`/`gst_element_set_state` calls on it, with zero
+locking between them -- unlike `lib/raop_rtp.c`'s own `running`/`joined`
+fields, which ARE consistently mutex-protected within that file (checked,
+not assumed). A burst of rapid SETUPs disrupting timing enough to trip the
+audio thread's self-heal condition, concurrently with the httpd thread's
+own `audio_renderer_start()` call for the next SETUP, would explain a
+permanently-dead `renderer`/pipeline without needing the `raop_rtp.c`-layer
+`joined` question above to be the cause at all. Both hypotheses need the
+same next step (a clean debug capture) to distinguish.
+
 ## 4. Next diagnostic step (not yet done)
 
 A clean `-d`/full-debug capture is needed, taken **without restarting the
