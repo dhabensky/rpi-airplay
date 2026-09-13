@@ -992,3 +992,50 @@ Also fixed a real inconsistency noticed while writing this test:
 wrap `ssh`/`scp` with `sshpass` (its sibling `test-render-health-e2e.sh`
 already did) -- it silently hung waiting for an interactive password
 prompt when run without an external workaround. Fixed to match.
+
+## 2026-09-13: three same-night regressions from one feature -- reverted,
+new bug-fix protocol, new threading/state-machine documentation
+
+The frozen-last-frame-after-disconnect fix (previous entries) went through
+three consecutive real-client regressions in one session: it froze the
+first frame of every new connection (a `gst_video_overlay_expose()` call
+raced kmssink's own async startup from the RAOP mirror thread -- fixed),
+then a stuck redundant-SETUP loop killed audio entirely (server restart
+cleared it, root cause not fully pinned down), then a real, reproducible
+audio-resume-latency regression after a genuine TEARDOWN (root-caused:
+`video_renderer_hide_video()`'s forced redraw does a real `drmModeSetPlane`
++ vsync wait synchronously inside the httpd thread's TEARDOWN-response
+path -- previously a free flag-set). Each fix looked verified in isolation
+and kept reopening the next problem.
+
+**New standing process** (user-mandated,
+`~/.claude/projects/.../memory/bug_fix_protocol.md`): any future bug gets
+(1) full info gathered from the user, including explicitly whether it's
+new or pre-existing, (2) the last-known-good commit identified and
+confirmed, (3) a real diff-driven root-cause analysis before any code is
+written, (4) a written bug doc (description + fix plan + verification
+plan) treated like a real task, (5) a documentation trace after the fix
+naming the exact revision.
+
+**New reference doc**:
+`docs/video-audio-threading-and-state-machine.md` -- the six real threads
+in this process, every piece of shared render/pipeline state and what (if
+anything) synchronizes it (answer, almost everywhere: nothing), the
+informal video pipeline state machine, and the primary-vs-overlay DRM
+plane layering (plane 86 = `/dev/fb0`/fbcon-owned primary plane, plane 98
+= kmssink's video overlay -- directly explains why the pillarbox-margin
+and post-disconnect boot-text bugs from the entries above were the same
+root cause). Written specifically so future changes in this area aren't
+made blind, per the pattern above.
+
+**Decision**: rather than attempt a fourth same-night patch, reverted the
+whole frozen-frame-hide feature back to the last commit before it existed
+(submodule `d2731a6` = `git revert dd95564`, confirmed via empty diff
+against `7402efa`; main repo `4c6491b`). Verified stable via
+`tools/test-reconnect-e2e.sh` and `tools/test-render-health-e2e.sh` (both
+PASS, healthy render rates) before handing back to the user for manual
+approval. The frozen-last-frame-after-disconnect bug this feature was
+trying to fix is real and still open (see
+`bugs/2026-09-13-audio-resume-latency-after-teardown.md` for the full
+analysis) -- the next attempt should be planned against the new threading
+doc, not attempted same-session again.

@@ -1,6 +1,24 @@
 # Bug: audio takes noticeably longer to resume after a mirror TEARDOWN/reconnect
 
-Status: **investigated, fix planned, not yet applied**
+Status: **root cause understood; underlying feature reverted rather than
+patched forward again (2026-09-13) pending a properly planned fix informed
+by `docs/video-audio-threading-and-state-machine.md`.**
+
+## 2026-09-13 update: reverted instead of patched
+
+Given this was the *third* same-night regression from the same feature
+(frozen-frame-hide, `dd95564`), the decision was made to stop patching
+forward and instead revert the whole feature back to the last known-good
+commit identified in section 2 below (`7402efa`) — submodule commit
+`d2731a6` (`git revert dd95564`, confirmed via empty diff against
+`7402efa`), main repo `4c6491b`. Verified stable via
+`tools/test-reconnect-e2e.sh` and `tools/test-render-health-e2e.sh` (both
+PASS) before handing off for the user's manual approval.
+
+**This bug (and the frozen-last-frame-after-disconnect bug the reverted
+feature was trying to fix) are both open again** — the analysis in
+sections 2-4 below remains valid and should inform the next, properly
+planned fix attempt; it just isn't applied right now.
 
 ## 1. Description (as reported)
 
