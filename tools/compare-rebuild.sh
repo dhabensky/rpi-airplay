@@ -51,8 +51,9 @@ if [ "${1:-}" = "--in-container" ]; then
   if [ "$mismatch_count" = "0" ]; then
     echo "PASS: all $(wc -l < "$work/candidate-filetree.sha256" | tr -d ' ') shared files match content"
   else
-    echo "DIFF: $mismatch_count files differ in content on shared paths (see build/compare-tierb-mismatches.txt)"
-    cp "$work/tierb-mismatches.txt" build/compare-tierb-mismatches.txt
+    echo "DIFF: $mismatch_count files differ in content on shared paths (see build/compare/tierb-mismatches.txt)"
+    mkdir -p build/compare
+    cp "$work/tierb-mismatches.txt" build/compare/tierb-mismatches.txt
   fi
   echo "  (golden-only paths: $golden_only, candidate-only paths: $candidate_only -- expected for routine"
   echo "   package version bumps; see REBUILD-STATUS.md accepted-delta notes, not auto-failed here)"
@@ -85,7 +86,8 @@ if [ "${1:-}" = "--in-container" ]; then
   else
     echo "DIFF: $boot_mismatch_count boot files differ in content on shared paths:"
     while IFS=' ' read -r _ _ path; do echo "  $path"; done < "$work/tierb-boot-mismatches.txt"
-    cp "$work/tierb-boot-mismatches.txt" build/compare-tierb-boot-mismatches.txt
+    mkdir -p build/compare
+    cp "$work/tierb-boot-mismatches.txt" build/compare/tierb-boot-mismatches.txt
   fi
   echo "  (golden-only paths: $boot_golden_only, candidate-only paths: $boot_candidate_only)"
 
@@ -101,7 +103,7 @@ if [ "${1:-}" = "--in-container" ]; then
     echo "  a mismatch against a build of the SAME commit is a real reproducibility bug."
   fi
   vendor_fail=0
-  for f in vendor/gstreamer-1.0-arm64-trixie/plugins/*.so vendor/gstreamer-1.0-arm64-trixie/libs/*; do
+  for f in build/vendor-gstreamer/plugins/*.so build/vendor-gstreamer/libs/*; do
     base=$(basename "$f")
     target="$work/root/usr/lib/aarch64-linux-gnu/gstreamer-1.0/$base"
     [ -f "$target" ] || target="$work/root/usr/lib/aarch64-linux-gnu/$base"

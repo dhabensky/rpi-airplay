@@ -1,0 +1,38 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: DietPi
+Label: DietPi
+Suite: trixie
+Codename: trixie
+Date: Sun, 13 Sep 2026 20:40:54 +0000
+Architectures: amd64 arm64 armhf riscv64
+Components: main main-armv6
+Description: DietPi APT repository for Debian Trixie based systems
+SHA256:
+ 1ff97a1084d6da08f6dfa6a0560ed54de5ed30c76bcedd2fd71b394dc54d8b32 64587 main/binary-amd64/Packages
+ eea48f0a8a189d3478d0a427ee582f0de5e83c7820a05acdfeb6c17b1230402c 7132 main/binary-amd64/Packages.xz
+ 56a0c122785152186e8af0d237cd9b3bb6d5f621cd7e06eac2dab4ad4e0b531c 63696 main/binary-arm64/Packages
+ 710a621ec0324d472e896dede30f5292f6833c3c5564fc54ae0162773b6044b2 6944 main/binary-arm64/Packages.xz
+ e449797b9165cd13f69f0872648a5609404d271a6712f8d0e61c591e5efa09c1 63033 main/binary-armhf/Packages
+ e23cf88c2d4a2841591a883ae0624682dd083d71582a4301be0af3bc59c80cf5 6944 main/binary-armhf/Packages.xz
+ 93600aa894cfb7a51160a6306793ddd88a08a2ea88a0abfbb0f14939c1945fa6 62081 main/binary-riscv64/Packages
+ a13ed7b801e2260214864202bfc8505870af768032489c516249640c6fd06e41 6952 main/binary-riscv64/Packages.xz
+ 394cd3925023a5cdb878dbbdb4c140b950866894f8ddd25a659e03cd5e5e4422 53851 main-armv6/binary-armhf/Packages
+ b067a7634fd6775b52a60e44341df0e498257b3bf7b8d154272b31c0c612130a 6252 main-armv6/binary-armhf/Packages.xz
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEE/7NUag/uVRbmWbbjHfRf25xs6FEFAmqnCmEACgkQHfRf25xs
+6FFrfA//fewmbxaboraHhdZowpuGcI1suoeC6ao5hJo9oiJGGziSsYwGJQ4veOAn
+dttPClh8QaeoPTf7m2MUyczIg14FzcTGeNvaNYXz4UHO1RbqFjqqiqC5Pxx8gQq0
+IlMCZCT0vMlUKQ5MS2+fercSqIROtGGGWywb6Qg7Zq57CxN+G59D17xa1/oWe9WW
+xa93EqjGyCR/prOZbshbPMjm+M7fN3jEvtq+XtDChgwJ82asw1gtspMbFteZm7cH
+2ONVoyMzdIuzhNKxEFLxkEI7Xah1m26DEt7GgqwPB8yISRH+b5B2dgSAN8cTp8HS
+k1rokQ/T6+MHoD4ZTXIjZJZKcCclRMcnpuhNtFbMKlu5ofTcOzZeqQ/PI94abpPp
+5BdLPvFIMTff0K34DHij7fFlVqQVTPBbSwpmBnRxGI2HiGzfvMG35PufYwWOMHIe
+cznN1VuLv4L91srJrV0rTLpEr84H+fmtsZXR48/+AaaC5a+7lv81pLBFgd2C6RWE
+IFRyjHWNvEIMoCJmcm44G9YdRYCAJ4dam/hWLpt9hsFh1pQg2+0Im3Z7UVqoNNEg
+kPV5tfLVYvkDpMT0fr1tyPxFY2gruJvqA7C/Hj4NI/PTTP8VROPLZOLMSUs88lOQ
+053+VXCXdOXc8FkAeOBXaLD5eDED51s+EqPjP6lzjdYPSDfQtZ0=
+=eYQM
+-----END PGP SIGNATURE-----

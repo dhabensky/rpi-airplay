@@ -1309,3 +1309,82 @@ rebuild, rerun the *same* unmodified script, confirm FAIL, restore,
 rebuild, confirm PASS again) -- proving the test has real discriminating
 power without that behavior living inside the test. `bug_fix_protocol`
 memory updated to state this as a hard rule for every future bug's test.
+
+## 2026-09-14: repo structure cleanup + apt package-drift fix
+
+Two rounds of directory reorg, then a real reproducibility gap fix,
+each rebuilt/reflashed/verified before moving to the next.
+
+**Reorg 1 (build/test artifacts)**: every build and test artifact now
+lives under `build/`, organized into `bin/` (diagnostic tool binaries),
+`logs/`, `pcaps/`, `images/`, `compare/` (`make verify` output), with the
+Makefile-tracked products (`uxplay_debug`, `rpi-airplay.img`,
+`dietpi-base.img`, `vendor-gstreamer/`) staying at `build/`'s root.
+Deleted several stale top-level leftovers (`closure_export/`, `gst_fix/`,
+a duplicate `uxplay_debug`, a duplicate `rpi-airplay-custom.img` --
+~1.08GB) and fixed the 3 scripts that were actually producing top-level
+clutter (`provisioning/deploy.sh`, `tools/compare-rebuild.sh`,
+`tools/test-reconnect-e2e.sh`) so it doesn't come back. `.gitignore`
+collapsed from ~20 lines (half of them dead) to a handful.
+
+**Reorg 2 (provisioning/ and vendor/ dissolved)**: `provisioning/files/`
+moved into `image-builder/files/` (the actual config payload
+`customize-root.sh` installs -- `image-builder/` is now genuinely
+self-contained, no reach-outside dependency). `provisioning/setup.sh` and
+`deploy.sh` moved to `tools/` (the separate live-Pi-over-SSH path,
+independent of `image-builder`'s from-scratch image assembly). `bugs/`
+moved to `docs/bugs/` (the per-bug counterpart to `PROGRESS.md`'s
+chronological log). The top-level `vendor/gstreamer-1.0-arm64-trixie/`
+was deleted entirely after diffing it byte-for-byte against
+`build/vendor-gstreamer/` and finding them identical -- it was just a
+stale, manually-committed copy of the same closure `tools/vendor-
+gstreamer-closure.sh` already regenerates; `tools/setup.sh` and
+`tools/compare-rebuild.sh`'s Tier C check now both reference
+`build/vendor-gstreamer/` directly instead.
+
+**Real bug found via `make verify`'s Tier A diff**: comparing a fresh
+build against the 2026-09-07 golden-reference showed unexpected package
+selection drift. Root cause: `customize-root.sh` ran `apt-get update`
+before every install, querying deb.debian.org/dietpi.com/
+archive.raspberrypi.com's *live* indices. `apt-packages.lock` pins which
+version to install, but Debian's live index only ever publishes the
+*current* version of each package -- the moment upstream ships a
+point/security release, a pinned older version can vanish from the
+index entirely (not just get superseded), and `apt-get install
+pkg=<pinned>` fails outright. The persistent apt-cache Docker volume
+does NOT protect against this (a comment in the old script claimed it
+did) -- it only caches already-downloaded `.deb` files, not the index
+apt resolves versions against.
+
+Fix: `image-builder/refresh-apt-lists.sh` (new, rare/deliberate, `make
+refresh-apt-lists`) runs `apt-get update` once and captures the
+resulting `/var/lib/apt/lists/*` index files into `image-builder/
+apt-lists/` (21 files, ~11MB, checked into git -- metadata, not
+binaries). `customize-root.sh` no longer calls `apt-get update` at all;
+it installs `apt-packages.lock`'s pins directly against this frozen
+index, with `Acquire::Check-Valid-Until=false` (the same setting
+snapshot.debian.org itself recommends, for the same reason: a
+deliberately-old snapshot always outlives its originally-published
+validity window). Verified empirically: today's Sept-9 lock-file pins
+still resolved cleanly against the fresh Sept-14 index capture, and a
+full rebuild produced zero `apt-get update` calls and zero
+version-resolution errors.
+
+Documented, not fixed (real scope, not done silently): `archive.
+raspberrypi.com` and `dietpi.com/apt` have no equivalent dated-snapshot
+service at all (confirmed via web search -- RPi Foundation forum users
+have asked for exactly this with no answer), so a package sourced from
+either could in principle still vanish at the file-storage layer, not
+just the index, over a long horizon. Full protection there would mean
+vendoring the actual `.deb` bytes for those two repos specifically --
+flagged in README's Known Gaps rather than done unasked.
+
+**Verification**: rebuilt the image after each round (`make image`),
+ran `make test-boot` (nspawn) and `make verify` (Tier A/B/C against the
+2026-09-07 golden-reference -- all diffs traced to that reference being
+stale, not to anything in this session), then did a real flash + boot on
+hardware: `systemctl is-active` confirmed `uxplay`/`avahi-daemon`/
+`dietpi-skip-firstrun` all active, `image-builder/files/` content landed
+at the right paths, `journalctl -u uxplay` showed a clean start with no
+errors, and `dns-sd -B _airplay._tcp` from the Mac confirmed the
+receiver actually advertises itself ("Living Room TV@rpi-airplay").

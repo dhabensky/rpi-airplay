@@ -85,7 +85,8 @@ echo "==> Fetching log"
 scp -q "$TARGET:/tmp/test-reconnect.log" "$WORKDIR/replay.log"
 # Kept outside WORKDIR (which the EXIT trap deletes) so the log survives a
 # FAIL for inspection regardless of exit path.
-cp "$WORKDIR/replay.log" "$PWD/build/reconnect-test-last.log"
+mkdir -p "$PWD/build/logs"
+cp "$WORKDIR/replay.log" "$PWD/build/logs/reconnect-test-last.log"
 ssh "$TARGET" "rm -f /tmp/test-reconnect.cap /tmp/test-reconnect.log"
 
 RECONNECT_LINE=$(grep -n "RECONNECT DONE" "$WORKDIR/replay.log" | cut -d: -f1 || true)
@@ -107,7 +108,7 @@ if [ "$AFTER" -lt 10 ]; then
   echo "FAIL: kmssink rendered almost nothing after the simulated reconnect --"
   echo "  this is the signature of the v4l2h264dec wedging bug (pipeline"
   echo "  destroy+recreate leaves the decoder firmware stuck). See:"
-  echo "  build/reconnect-test-last.log"
+  echo "  build/logs/reconnect-test-last.log"
   exit 1
 fi
 echo "PASS: kmssink kept rendering after the simulated reconnect"

@@ -1,7 +1,9 @@
 #!/bin/bash
 # Computes the minimal GStreamer plugin closure this project needs and
-# vendors it to build/vendor-gstreamer/, replacing the manual/unscripted
-# extraction that originally produced vendor/gstreamer-1.0-arm64-trixie/.
+# vendors it to build/vendor-gstreamer/ (gitignored -- regenerated fresh
+# by `make vendor-gstreamer`, a prerequisite of `make image`; also needed
+# by tools/setup.sh's manual live-Pi path, copied over separately since
+# that script never runs Docker).
 #
 # Approach: in a disposable environment with the FULL gstreamer-plugins-
 # good/bad/base/libav/alsa closure installed (Dockerfile.gstreamer-closure),

@@ -6,7 +6,7 @@
 # graph and the one documented entry point, not where the actual logic
 # lives.
 .PHONY: image image-xz uxplay vendor-gstreamer base-image golden-reference verify \
-        reproducible-check refresh-base-image test-boot test-resize clean
+        reproducible-check refresh-base-image refresh-apt-lists test-boot test-resize clean
 
 IMAGE_BUILDER_TAG := rpi-airplay-image-builder
 GSTREAMER_CLOSURE_TAG := rpi-airplay-gstreamer-closure
@@ -87,9 +87,9 @@ build/dietpi-base.img: image-builder/BASE-IMAGE.env image-builder/fetch-base.sh
 # in that form. See `image-xz` below if a compressed copy is ever actually
 # needed (e.g. to archive/share a specific build).
 build/rpi-airplay.img: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md build/dietpi-base.img \
-                          $(shell find provisioning/files -type f) provisioning/setup.sh \
+                          $(shell find image-builder/files -type f) \
                           image-builder/extract-partitions.sh image-builder/customize-root.sh \
-                          image-builder/apt-packages.lock \
+                          image-builder/apt-packages.lock $(shell find image-builder/apt-lists -type f) \
                           image-builder/customize-boot.sh \
                           image-builder/build-image.sh Dockerfile.image-builder \
                           $(PERSONAL_ENV)
@@ -106,7 +106,7 @@ build/rpi-airplay.img: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md bui
 	  -v $(DIETPI_ROOT_VOLUME):/rootdir \
 	  -v "$$PWD/build/vendor-gstreamer":/vendor:ro \
 	  -v "$$PWD/build/uxplay_debug":/uxplay_debug:ro \
-	  -v "$$PWD/provisioning/files":/provfiles:ro \
+	  -v "$$PWD/image-builder/files":/provfiles:ro \
 	  -v "$$PWD/image-builder":/image-builder:ro \
 	  -v $(APT_CACHE_VOLUME):/rootdir/var/cache/apt/archives \
 	  $(if $(PERSONAL_ENV),-v "$$PWD/personal.env":/personal.env:ro,) \
@@ -150,6 +150,12 @@ reproducible-check:
 # image-builder/BASE-IMAGE.env's own header comment).
 refresh-base-image:
 	./image-builder/refresh-base-image.sh
+
+# Deliberate, rare action (see that script's header) -- run this, then
+# regenerate image-builder/apt-packages.lock from the same apt-get update
+# snapshot, whenever you actually want package versions to move.
+refresh-apt-lists: base-image
+	./image-builder/refresh-apt-lists.sh
 
 # Fast local functional check without an SD card: boots the built image's
 # root filesystem via systemd-nspawn on colima's own VM (real aarch64 Linux,

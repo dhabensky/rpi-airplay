@@ -14,6 +14,11 @@ surviving seeks — does.
 - `PROGRESS.md` — narrative debugging/decision log for the whole project
   (start here to understand *why* things are the way they are; this
   README covers *what* and *how to reproduce*).
+- `docs/` — reference documentation describing only the *current* state
+  (threading/locking maps, pipeline construction, test framework, etc. —
+  see `docs/README.md` for the index). `docs/bugs/` holds one file per
+  fixed/open bug: symptom, root cause, fix, verification — the specific
+  counterpart to `PROGRESS.md`'s chronological narrative.
 - `Dockerfile.uxplay-buildtest` — builds the `uxplay` binary for arm64
   Linux (build on an Apple Silicon Mac via colima, native, no
   cross-compilation needed).
@@ -21,16 +26,9 @@ surviving seeks — does.
   [`dhabensky/UxPlay`](https://github.com/dhabensky/UxPlay), branch
   `dhabensky-dev` (a fork of `FDH2/UxPlay` v1.73.7 with the patches this
   deployment needs — see that repo's history for what and why).
-- `provisioning/` — scripts + config files to take a fresh DietPi install
-  to a working uxplay receiver, and to build+deploy the binary.
-- `vendor/gstreamer-1.0-arm64-trixie/` — vendored GStreamer runtime
-  plugins the Pi needs that aren't (yet) built from a scripted recipe —
-  see that directory's `MANIFEST.md`, this is the project's main
-  reproducibility gap right now.
-- `tools/capx.c` — parser for the `-capture` file format the UxPlay fork
-  writes (see `provisioning`/UxPlay's own `-capture`/`-replay` flags),
-  for inspecting or extracting the H.264 elementary stream from a
-  recorded session.
+- `tools/capx.c` — parser for the `-capture` file format the UxPlay
+  fork's own `-capture`/`-replay` flags write, for inspecting or
+  extracting the H.264 elementary stream from a recorded session.
 - `Makefile` — the actual build system. `make image` produces a complete,
   ready-to-flash `build/rpi-airplay.img` from a clean checkout; `make
   verify` compares it against a `golden-reference/` capture of the live
@@ -39,11 +37,20 @@ surviving seeks — does.
   every consumer of it (`dd`, the local test harnesses) uses it
   uncompressed; `make image-xz` compresses an already-built image on
   demand for the rare case of actually needing to archive/share one.
-- `image-builder/` — the offline image-assembly pipeline: extracts the
-  base DietPi image's partitions to plain directories, customizes the
-  root filesystem via `chroot`, rebuilds partition images, and assembles
-  the final `.img` — all without loop devices or `--privileged`
-  containers (see that dir's scripts for the mechanics). Every `apt`
+- `build/` — gitignored; every build and test artifact lives here, never
+  at the repo root. Makefile-tracked products sit directly in `build/`
+  (`uxplay_debug`, `rpi-airplay.img`, `dietpi-base.img`,
+  `vendor-gstreamer/`); everything else is sorted into `bin/` (diagnostic
+  tool binaries), `logs/` (debug/replay/reconnect run logs), `pcaps/`
+  (raw packet captures + decode tooling), `images/` (calibration/
+  verification screenshots), and `compare/` (`make verify` output).
+- `image-builder/` — the offline image-assembly pipeline, self-contained:
+  extracts the base DietPi image's partitions to plain directories,
+  customizes the root filesystem via `chroot`, rebuilds partition
+  images, and assembles the final `.img` — all without loop devices or
+  `--privileged` containers (see that dir's scripts for the mechanics).
+  `image-builder/files/` is the config-file payload it installs onto the
+  image (systemd unit, udev rule, `uxrun`, `zero-fb0`, ...). Every `apt`
   package installed (not just the top-level ones — their full transitive
   closure too) is pinned to an exact version via `apt-packages.lock`, so
   the image doesn't silently drift as Debian trixie moves forward — see
@@ -54,10 +61,15 @@ surviving seeks — does.
   list, file-tree content hashes, redacted config) so a rebuilt image can
   be compared against it. `EXCLUDE-LIST.md` documents what's deliberately
   excluded (volatile paths, WiFi PSK — never captured verbatim).
-- `tools/` (besides `capx.c`) — reproducibility tooling:
-  `vendor-gstreamer-closure.sh` (regenerates `vendor/`),
-  `verify-reproducible-build.sh` (double-build hash check),
-  `compare-rebuild.sh` (the `make verify` recipe).
+- `tools/` (besides `capx.c`) — reproducibility tooling
+  (`vendor-gstreamer-closure.sh` regenerates `vendor/`,
+  `verify-reproducible-build.sh` is a double-build hash check,
+  `compare-rebuild.sh` is the `make verify` recipe) plus two scripts for
+  the live-Pi-over-SSH path, independent of `image-builder/`'s
+  from-scratch image assembly: `setup.sh` provisions an already-running
+  Pi in place (idempotent, safe to re-run), and `deploy.sh` builds and
+  pushes just the `uxplay_debug` binary to a Pi that's already set up —
+  the fast path for iterating without a reflash.
 - `REBUILD-STATUS.md` — one dated entry per `make verify` run, with every
   Tier A/B/C delta either fixed or explicitly justified. Read the latest
   entry before assuming a build matches the live Pi.
@@ -84,7 +96,7 @@ docker cp "$id:/usr/local/bin/uxplay" ./uxplay_debug
 docker rm "$id"
 ```
 
-Or just run `provisioning/deploy.sh`, which does the above and copies
+Or just run `tools/deploy.sh`, which does the above and copies
 the result to a Pi over SSH.
 
 ## Building and flashing a complete image
@@ -220,20 +232,38 @@ A/V sync).
 ## Known gaps (read before treating this as fully reproducible)
 
 1. **The vendored GStreamer plugin closure is regenerable, but its
-   allowlist is hand-curated.** `make vendor-gstreamer` recomputes
-   `vendor/gstreamer-1.0-arm64-trixie/` from
+   allowlist is hand-curated.** `make vendor-gstreamer` computes
+   `build/vendor-gstreamer/` fresh, every build, from
    `tools/gstreamer-plugin-allowlist.txt` via
-   `tools/vendor-gstreamer-closure.sh` (verified byte-identical against
-   the checked-in copy) — but which plugins belong on that allowlist is
-   still a human judgment call, not derived from anything self-evident.
-   Read that file's own comments before adding or removing an entry.
-2. **The systemd unit's `ExecStart` embeds hand-tuned pipeline flags**
+   `tools/vendor-gstreamer-closure.sh` — but which plugins belong on
+   that allowlist is still a human judgment call, not derived from
+   anything self-evident. Read that file's own comments before adding
+   or removing an entry. `tools/setup.sh` (the manual live-Pi path)
+   needs a copy of `build/vendor-gstreamer/` transferred alongside it,
+   since it never runs Docker itself.
+2. **Package installs are frozen against a checked-in apt index, not a
+   live mirror.** `customize-root.sh` installs `apt-packages.lock`'s
+   pins against `image-builder/apt-lists/` (captured once by `make
+   refresh-apt-lists`, ~11MB of package metadata, no `.deb` binaries)
+   instead of calling `apt-get update` — Debian only publishes the
+   *current* version of each package in its live index, so a pinned
+   version can vanish the moment upstream ships a point/security
+   release, breaking the build for reasons that have nothing to do with
+   an intentional change here. The two files must be regenerated
+   together (see `apt-packages.lock`'s header). Residual gap: this only
+   freezes the *index* — the actual `.deb` bytes still come from the
+   live network on a cache miss, and `archive.raspberrypi.com`/
+   `dietpi.com/apt` (unlike Debian's own mirrors) have no dated-snapshot
+   service at all, so a package sourced from either could in principle
+   still disappear from the pool itself, not just the index, over a
+   long enough horizon.
+3. **The systemd unit's `ExecStart` embeds hand-tuned pipeline flags**
    (`kmssink force-modesetting=true qos=false ts-offset=300000000`,
    `-vd v4l2h264dec -vc identity`) that came from extensive empirical
    tuning documented in `PROGRESS.md`, not from anything self-evident
    in the code — don't "simplify" these without reading that history
    first.
-3. **Tier D (an actual flash + boot + AirPlay session) is the only
+4. **Tier D (an actual flash + boot + AirPlay session) is the only
    remaining unverified step in `REBUILD-STATUS.md`.** Package manifest,
    file-tree content, and binary-exact checks (Tiers A–C) all pass or
    have an explicit, justified accepted delta — read that file's latest

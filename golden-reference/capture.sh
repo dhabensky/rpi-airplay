@@ -1,7 +1,7 @@
 #!/bin/bash
 # Captures a comparison snapshot from the live Pi: package manifest,
 # file-tree content hashes (minus EXCLUDE-LIST.md's volatile paths), and
-# verbatim copies of the config files also mirrored in provisioning/files/
+# verbatim copies of the config files also mirrored in image-builder/files/
 # (as a drift check against what we think is deployed).
 #
 # Run from the Mac (matches every other Pi interaction in this project --
@@ -47,7 +47,7 @@ ssh_cmd "$remote_find" > "$OUT/filetree-manifest.sha256"
 remote_find_boot="find /boot/firmware -type f -exec sha256sum {} + 2>/dev/null | sort -k2"
 ssh_cmd "$remote_find_boot" > "$OUT/filetree-manifest-boot.sha256"
 
-echo "==> Config file drift check (verbatim copies, compare against provisioning/files/)"
+echo "==> Config file drift check (verbatim copies, compare against image-builder/files/)"
 mkdir -p "$OUT/config"
 ssh_cmd 'cat /etc/systemd/system/uxplay.service' > "$OUT/config/uxplay.service"
 ssh_cmd 'cat /etc/modules-load.d/bcm2835-codec.conf' > "$OUT/config/bcm2835-codec.conf"

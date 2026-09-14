@@ -69,6 +69,12 @@ Requires: Docker only.
   GStreamer plugin closure; a build-time tool, not a pass/fail test.
 - **`tools/compare-rebuild.sh`** — tiered comparison of a built image
   against a golden-reference snapshot (partition-level, no boot).
+- **`image-builder/refresh-apt-lists.sh`** — rare/deliberate: captures a
+  fresh `apt-get update` snapshot into `image-builder/apt-lists/`, the
+  frozen index `customize-root.sh` installs against instead of querying
+  a live mirror. A build-input tool, not a pass/fail test — see
+  `apt-packages.lock`'s header for why this exists and how the two must
+  be regenerated together.
 
 ## Boot-adjacent checks (local Linux container, no real hardware)
 

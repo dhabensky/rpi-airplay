@@ -1,7 +1,7 @@
 #!/bin/bash
 # Customizes an extracted DietPi root directory: installs the manually
 # added packages (pinned exactly via apt-packages.lock, see below), the
-# vendored GStreamer runtime, the uxplay binary, and provisioning/files/
+# vendored GStreamer runtime, the uxplay binary, and image-builder/files/
 # content; strips firmware/locale/docs; resets machine-id/ssh host keys.
 # Meant to run inside the image-builder container (Dockerfile.image-builder).
 #
@@ -22,10 +22,10 @@
 # the host anymore -- inspect it via `docker run -v <volume>:/x ... find/stat`.)
 #
 # Usage: image-builder/customize-root.sh <root-dir> <vendor-gstreamer-dir> \
-#          <uxplay-debug-binary> <provisioning-files-dir> [personal-env-file]
+#          <uxplay-debug-binary> <files-dir> [personal-env-file]
 set -euo pipefail
 
-work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <provisioning-files-dir> [personal-env-file]}"
+work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <files-dir> [personal-env-file]}"
 vendor="${2:?}"
 uxplay_bin="${3:?}"
 provfiles="${4:?}"
@@ -92,16 +92,28 @@ echo "==> Installing packages, pinned to image-builder/apt-packages.lock (avahi-
 # ~220-package transitive closure too, apt-get would silently resolve
 # whatever's currently newest in trixie for every unpinned dependency on
 # every build, making the image non-reproducible over time even though
-# the top-level package list never changes. Pins are validated against
-# whatever trixie mirror `apt-get update` currently sees, not a frozen
-# snapshot -- see that file's header for the tradeoff (a version can in
-# principle age out of the live archive; the persistent apt-cache volume
-# shields same-machine rebuilds from that even then, but a fresh machine
-# would need the lock file regenerated) and how to regenerate it.
+# the top-level package list never changes.
+#
+# No `apt-get update` here: it would query whatever Debian/DietPi/RPi
+# Foundation currently publish, and a pinned version can vanish from that
+# live index the moment upstream ships a newer point/security release
+# (old versions are dropped from the published index, not just
+# superseded -- the persistent apt-cache volume does NOT protect against
+# this, it only caches already-downloaded .deb files, not the index apt
+# resolves versions against). Instead, install directly against the
+# frozen index captured once by `make refresh-apt-lists` into
+# image-builder/apt-lists/ -- apt then always resolves the exact same
+# pinned versions, and packages only change when that's deliberately
+# re-run. Check-Valid-Until=false because that frozen index is expected
+# to outlive its originally-published validity window by design (the
+# same setting snapshot.debian.org itself recommends for this reason).
 lockfile="$(dirname "$0")/apt-packages.lock"
 pinned_packages="$(grep -v '^#' "$lockfile" | grep -v '^$' | tr '\n' ' ')"
+aptlists="$(dirname "$0")/apt-lists"
+mkdir -p "$work/var/lib/apt/lists/partial"
+cp "$aptlists"/* "$work/var/lib/apt/lists/"
 cp /etc/resolv.conf "$work/etc/resolv.conf"
-chroot "$work" bash -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends $pinned_packages"
+chroot "$work" bash -c "DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Check-Valid-Until=false install -y -qq --no-install-recommends $pinned_packages"
 chroot "$work" bash -c 'DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq dropbear dropbear-bin 2>/dev/null || true'
 chroot "$work" bash -c 'apt-get autoremove -y -qq'
 if [ "$apt_cache_mounted" = 0 ]; then
@@ -187,7 +199,7 @@ install -m 0644 -t "$work/usr/lib/aarch64-linux-gnu" "$vendor/libs/"*
 echo "==> Installing uxplay_debug binary"
 install -m 0755 "$uxplay_bin" "$work/usr/local/bin/uxplay_debug"
 
-echo "==> Installing provisioning/files/ content (systemd unit, udev rule, modules-load, uxrun, zero-fb0)"
+echo "==> Installing image-builder/files/ content (systemd unit, udev rule, modules-load, uxrun, zero-fb0)"
 cp -a "$provfiles/etc/." "$work/etc/"
 install -m 0755 "$provfiles/usr/local/bin/uxrun" "$work/usr/local/bin/uxrun"
 # zero-fb0: 2026-09-12 fix, was previously only ever deployed ad hoc over SSH,

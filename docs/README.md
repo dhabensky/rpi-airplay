@@ -24,5 +24,6 @@ split by concern so each stays independently readable:
   type/suite, what it requires (unit/Docker/real Pi hardware), and —
   importantly — what each one does *not* check.
 
-See `bugs/` for specific bug investigations, and `PROGRESS.md` for the
-full chronological project history.
+See **[bugs/](bugs/)** for specific bug investigations (one file per bug:
+symptom, root cause, fix, verification), and `PROGRESS.md` for the full
+chronological project history.
