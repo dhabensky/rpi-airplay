@@ -3,7 +3,7 @@
 # added packages (pinned exactly via apt-packages.lock, see below), the
 # vendored GStreamer runtime, the uxplay binary, and image-builder/files/
 # content; strips firmware/locale/docs; resets machine-id/ssh host keys.
-# Meant to run inside the image-builder container (Dockerfile.image-builder).
+# Meant to run inside the shared Dockerfile tooling image.
 #
 # <root-dir> must be a Docker named volume mount, NOT a macOS host
 # bind-mount (`-v $HOST_PATH:/x`): the virtiofs bridge macOS Docker/colima

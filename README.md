@@ -19,9 +19,12 @@ surviving seeks — does.
   see `docs/README.md` for the index). `docs/bugs/` holds one file per
   fixed/open bug: symptom, root cause, fix, verification — the specific
   counterpart to `PROGRESS.md`'s chronological narrative.
-- `Dockerfile.uxplay-buildtest` — builds the `uxplay` binary for arm64
-  Linux (build on an Apple Silicon Mac via colima, native, no
-  cross-compilation needed).
+- `Dockerfile` — one shared tooling image for every disposable build/
+  test/tool environment this project uses (compiling `uxplay_debug`,
+  running unit tests, assembling the Pi image, computing the vendored
+  GStreamer closure, building diagnostic tools) — see that file's own
+  header. Builds on an Apple Silicon Mac via colima, native, no
+  cross-compilation needed.
 - `UxPlay/` — git submodule pointing at
   [`dhabensky/UxPlay`](https://github.com/dhabensky/UxPlay), branch
   `dhabensky-dev` (a fork of `FDH2/UxPlay` v1.73.7 with the patches this
@@ -90,10 +93,8 @@ surviving seeks — does.
 ## Building the uxplay_debug binary
 
 ```bash
-docker build -t uxplay-buildtest -f Dockerfile.uxplay-buildtest .
-id=$(docker create uxplay-buildtest)
-docker cp "$id:/usr/local/bin/uxplay" ./uxplay_debug
-docker rm "$id"
+make uxplay
+# or directly: ./tools/build-uxplay.sh build/uxplay_debug
 ```
 
 Or just run `tools/deploy.sh`, which does the above and copies

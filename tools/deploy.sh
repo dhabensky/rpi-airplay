@@ -1,7 +1,7 @@
 #!/bin/bash
-# Builds uxplay via ../Dockerfile.uxplay-buildtest (colima/Docker on the arm64
-# Mac host, no cross-compilation needed) and deploys the binary to a Pi
-# already provisioned via setup.sh, then restarts the service.
+# Builds uxplay (colima/Docker on the arm64 Mac host, no cross-compilation
+# needed) and deploys the binary to a Pi already provisioned via setup.sh,
+# then restarts the service.
 #
 # Usage: ./deploy.sh [user@host]   (default: root@192.168.1.34)
 set -euo pipefail
@@ -9,14 +9,8 @@ cd "$(dirname "$0")/.."
 
 TARGET="${1:-root@192.168.1.34}"
 
-echo "==> Building uxplay-buildtest image"
-docker build -t uxplay-buildtest -f Dockerfile.uxplay-buildtest .
-
-echo "==> Extracting binary"
-mkdir -p build
-id=$(docker create uxplay-buildtest)
-docker cp "$id:/usr/local/bin/uxplay" build/uxplay_debug
-docker rm "$id" >/dev/null
+echo "==> Building uxplay_debug"
+./tools/build-uxplay.sh build/uxplay_debug
 file build/uxplay_debug
 
 echo "==> Deploying to $TARGET"

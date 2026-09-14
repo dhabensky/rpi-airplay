@@ -968,3 +968,34 @@ BLOCKED: no spare SD card/Pi available for a real flash+boot+AirPlay test (see p
 === TIER E: raw disk bit-diff ===
 N/A by design: the .img is the deliverable, not a byte-diff target (see plan's reframing).
 ```
+
+## 2026-09-14T07:06:38Z
+- golden-reference snapshot: `golden-reference/snapshots/2026-09-14/`
+- built image: `build/rpi-airplay.img` (2f86a4059eda...)
+- UxPlay submodule commit: `6fb0f92`
+```
+debugfs 1.47.2 (1-Jan-2025)
+Extracted boot partition -> /tmp/compare-work/boot (422 files)
+Extracted root partition -> /tmp/compare-work/root (13292 files)
+=== TIER A: package manifest ===
+PASS: package selections identical
+
+=== TIER B: file-tree content (root partition, minus EXCLUDE-LIST.md) ===
+DIFF: 10 files differ in content on shared paths (see build/compare/tierb-mismatches.txt)
+  (golden-only paths: 16, candidate-only paths: 4 -- expected for routine
+   package version bumps; see REBUILD-STATUS.md accepted-delta notes, not auto-failed here)
+
+=== TIER B (boot partition, minus known macOS-mount junk) ===
+PASS: all 422 shared boot files match content
+  (golden-only paths: 0, candidate-only paths: 0)
+
+=== TIER C: binary-exact (uxplay_debug + vendor GStreamer) ===
+PASS: uxplay_debug binary matches golden reference exactly
+PASS: all vendored GStreamer files match exactly
+
+=== TIER D: functional smoke test ===
+BLOCKED: no spare SD card/Pi available for a real flash+boot+AirPlay test (see plan).
+
+=== TIER E: raw disk bit-diff ===
+N/A by design: the .img is the deliverable, not a byte-diff target (see plan's reframing).
+```

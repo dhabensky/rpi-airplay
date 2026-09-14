@@ -62,16 +62,16 @@ if [ -f "$work/dietpi.img.xz.asc" ]; then
 fi
 
 echo "==> Extracting DietPi version (for the stored filename)"
-docker build -q -t rpi-airplay-image-builder -f Dockerfile.image-builder . >/dev/null
+docker build -q -t rpi-airplay-buildenv -f Dockerfile . >/dev/null
 xz -dk "$work/dietpi.img.xz" -c > "$work/dietpi.img"
-docker run --rm -v "$work":/w -v "$PWD/image-builder":/image-builder:ro rpi-airplay-image-builder \
+docker run --rm -v "$work":/w -v "$PWD/image-builder":/image-builder:ro rpi-airplay-buildenv \
   bash /image-builder/extract-partitions.sh /w/dietpi.img /w/peek-boot /w/peek-root >/dev/null 2>&1 || true
 # .version lives in the root partition at /boot/dietpi/.version (DietPi's
 # own housekeeping path, distinct from /boot/firmware -- the FAT32 RPi
 # bootloader partition, which extract-partitions.sh calls "boot"). It's
 # shell-variable-assignment format (G_DIETPI_VERSION_CORE=10 etc.), not
 # plain text -- source it and read the 3 fields directly.
-VERSION=$(docker run --rm -v "$work":/w rpi-airplay-image-builder bash -c '
+VERSION=$(docker run --rm -v "$work":/w rpi-airplay-buildenv bash -c '
   . /w/peek-root/boot/dietpi/.version 2>/dev/null
   echo "${G_DIETPI_VERSION_CORE}.${G_DIETPI_VERSION_SUB}.${G_DIETPI_VERSION_RC}"
 ' || echo "unknown")

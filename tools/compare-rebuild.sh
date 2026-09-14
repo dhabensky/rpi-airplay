@@ -123,7 +123,7 @@ fi
 
 # --- outer (host) invocation ---
 mkdir -p build
-docker build -q -t rpi-airplay-image-builder -f Dockerfile.image-builder . >/dev/null
+docker build -q -t rpi-airplay-buildenv -f Dockerfile . >/dev/null
 golden_abs="$(cd "$golden" && pwd)"
 built_abs="$(cd "$(dirname "$built_img")" && pwd)/$(basename "$built_img")"
 
@@ -131,7 +131,7 @@ result=$(docker run --rm \
   -v "$PWD":/work -w /work \
   -v "$golden_abs":/golden:ro \
   -v "$built_abs":/built.img:ro \
-  rpi-airplay-image-builder \
+  rpi-airplay-buildenv \
   bash tools/compare-rebuild.sh --in-container /built.img /golden /tmp/compare-work 2>&1) || true
 
 echo "$result"

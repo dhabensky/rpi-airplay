@@ -18,7 +18,8 @@ cd "$(dirname "$0")/.."
 
 run_check() {
   local logfile="$1"
-  docker run --rm uxplay-buildtest /usr/local/bin/uxplay -vs 0 -ntpresynccheck > "$logfile" 2>&1 &
+  docker run --rm -v "$PWD/build/uxplay_debug":/usr/local/bin/uxplay:ro \
+    rpi-airplay-buildenv /usr/local/bin/uxplay -vs 0 -ntpresynccheck > "$logfile" 2>&1 &
   local pid=$!
   sleep 4
   kill "$pid" 2>/dev/null || true

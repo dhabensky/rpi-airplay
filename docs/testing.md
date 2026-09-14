@@ -7,8 +7,9 @@ What each test type actually checks, what it needs to run, and — critically
 
 Requires: Docker only. No hardware, no network, no Pi.
 
-`Dockerfile.unit-tests` builds and runs each `UxPlay/tests/*.c` file as a
-`RUN` step (a non-zero exit/assert failure fails the `docker build`):
+`tools/run-unit-tests.sh` compiles and runs each `UxPlay/tests/*.c` file
+inside the shared tooling image (a non-zero exit/assert failure fails
+the script):
 
 | Test | Checks |
 |---|---|
@@ -21,11 +22,11 @@ real network I/O.
 
 ## `-threadtest N` / `-ntpresynccheck` — synthetic-client, real-server tests
 
-Requires: Docker (`make uxplay`) to build; runs via `docker run
-uxplay-buildtest /usr/local/bin/uxplay -vs 0 -threadtest N` (or
-`-ntpresynccheck`). No Pi hardware needed for the audio path (`-vs 0`
-skips video/DRM entirely). Can also run on the Pi for a real `alsasink`
-instead of `autoaudiosink`.
+Requires: Docker (`make uxplay`) to build; runs via `docker run -v
+"$PWD/build/uxplay_debug":/usr/local/bin/uxplay:ro rpi-airplay-buildenv
+/usr/local/bin/uxplay -vs 0 -threadtest N` (or `-ntpresynccheck`). No Pi
+hardware needed for the audio path (`-vs 0` skips video/DRM entirely).
+Can also run on the Pi for a real `alsasink` instead of `autoaudiosink`.
 
 A minimal synthetic AirPlay client (built into `uxplay.cpp`, see
 `docs/threadtest.md`) drives the *real* `raop_init()`/httpd thread/

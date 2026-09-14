@@ -8,8 +8,9 @@
 .PHONY: image image-xz uxplay vendor-gstreamer base-image golden-reference verify \
         reproducible-check refresh-base-image refresh-apt-lists test-boot test-resize clean
 
-IMAGE_BUILDER_TAG := rpi-airplay-image-builder
-GSTREAMER_CLOSURE_TAG := rpi-airplay-gstreamer-closure
+# One shared tooling image (see Dockerfile's own header) for every
+# disposable build/test/tool environment this project uses.
+BUILDENV_TAG := rpi-airplay-buildenv
 
 # Optional, gitignored, personal (WiFi creds, overscan tuning, ... -- see
 # personal.env.example). Empty if the file doesn't exist -- `make image`
@@ -47,28 +48,23 @@ vendor-gstreamer: build/vendor-gstreamer/MANIFEST.md
 base-image: build/dietpi-base.img
 
 # --- UxPlay unit tests (tests/*.c) -- fully autonomous, no hardware/network ---
-# `docker build` itself is the test runner: each test compiles and runs as
-# part of a RUN line (see Dockerfile.unit-tests), so a non-zero exit (an
-# assert() firing) fails the build. No -q: test PASS/FAIL output should be
-# visible, not swallowed.
+# tools/run-unit-tests.sh is the test runner: each test compiles and runs
+# inside the container, so a non-zero exit (an assert() firing) fails this
+# recipe.
 .PHONY: unit-tests
-unit-tests: Dockerfile.unit-tests $(shell find UxPlay/tests UxPlay/lib/raop_conn_policy.* UxPlay/renderers/audio_renderer.c -type f 2>/dev/null)
-	docker build -t unit-tests-buildtest -f Dockerfile.unit-tests .
+unit-tests: Dockerfile $(shell find UxPlay/tests UxPlay/lib/raop_conn_policy.* UxPlay/renderers/audio_renderer.c -type f 2>/dev/null)
+	./tools/run-unit-tests.sh
 
 # --- uxplay binary (native arm64 via colima/Docker) ---
-build/uxplay_debug: Dockerfile.uxplay-buildtest $(shell find UxPlay -maxdepth 1)
-	@mkdir -p build
-	docker build -q -t uxplay-buildtest -f Dockerfile.uxplay-buildtest .
-	id=$$(docker create uxplay-buildtest); \
-	docker cp "$$id:/usr/local/bin/uxplay" build/uxplay_debug; \
-	docker rm "$$id" >/dev/null
+build/uxplay_debug: Dockerfile $(shell find UxPlay -maxdepth 1)
+	./tools/build-uxplay.sh build/uxplay_debug
 
 # --- vendor GStreamer closure ---
 # Depends on a golden-reference package manifest to compute the delta
 # against (see EXCLUDE-LIST.md / capture.sh) -- uses the most recent
 # snapshot found under golden-reference/snapshots/.
 LATEST_SNAPSHOT := $(shell ls -d golden-reference/snapshots/*/ 2>/dev/null | sort | tail -1)
-build/vendor-gstreamer/MANIFEST.md: Dockerfile.gstreamer-closure tools/gstreamer-plugin-allowlist.txt tools/vendor-gstreamer-closure.sh
+build/vendor-gstreamer/MANIFEST.md: Dockerfile tools/gstreamer-plugin-allowlist.txt tools/vendor-gstreamer-closure.sh
 	@if [ -z "$(LATEST_SNAPSHOT)" ]; then \
 	  echo "ERROR: no golden-reference snapshot found -- run 'make golden-reference' first" >&2; exit 1; \
 	fi
@@ -91,16 +87,16 @@ build/rpi-airplay.img: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md bui
                           image-builder/extract-partitions.sh image-builder/customize-root.sh \
                           image-builder/apt-packages.lock $(shell find image-builder/apt-lists -type f) \
                           image-builder/customize-boot.sh \
-                          image-builder/build-image.sh Dockerfile.image-builder \
+                          image-builder/build-image.sh Dockerfile \
                           $(PERSONAL_ENV)
-	docker build -q -t $(IMAGE_BUILDER_TAG) -f Dockerfile.image-builder .
+	docker build -q -t $(BUILDENV_TAG) -f Dockerfile .
 	docker volume rm -f $(DIETPI_ROOT_VOLUME) $(DIETPI_BOOT_VOLUME) >/dev/null 2>&1 || true
 	docker run --rm \
 	  -v "$$PWD/build":/build:ro \
 	  -v "$$PWD/image-builder":/image-builder:ro \
 	  -v $(DIETPI_BOOT_VOLUME):/dietpi-boot \
 	  -v $(DIETPI_ROOT_VOLUME):/dietpi-root \
-	  $(IMAGE_BUILDER_TAG) bash /image-builder/extract-partitions.sh \
+	  $(BUILDENV_TAG) bash /image-builder/extract-partitions.sh \
 	    /build/dietpi-base.img /dietpi-boot /dietpi-root
 	docker run --rm \
 	  -v $(DIETPI_ROOT_VOLUME):/rootdir \
@@ -110,17 +106,17 @@ build/rpi-airplay.img: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md bui
 	  -v "$$PWD/image-builder":/image-builder:ro \
 	  -v $(APT_CACHE_VOLUME):/rootdir/var/cache/apt/archives \
 	  $(if $(PERSONAL_ENV),-v "$$PWD/personal.env":/personal.env:ro,) \
-	  $(IMAGE_BUILDER_TAG) bash /image-builder/customize-root.sh /rootdir /vendor /uxplay_debug /provfiles $(if $(PERSONAL_ENV),/personal.env,)
+	  $(BUILDENV_TAG) bash /image-builder/customize-root.sh /rootdir /vendor /uxplay_debug /provfiles $(if $(PERSONAL_ENV),/personal.env,)
 	docker run --rm \
 	  -v $(DIETPI_BOOT_VOLUME):/dietpi-boot \
 	  -v "$$PWD/image-builder":/image-builder:ro \
 	  $(if $(PERSONAL_ENV),-v "$$PWD/personal.env":/personal.env:ro,) \
-	  $(IMAGE_BUILDER_TAG) bash /image-builder/customize-boot.sh /dietpi-boot $(if $(PERSONAL_ENV),/personal.env,)
+	  $(BUILDENV_TAG) bash /image-builder/customize-boot.sh /dietpi-boot $(if $(PERSONAL_ENV),/personal.env,)
 	docker run --rm \
 	  -v "$$PWD":/work -w /work \
 	  -v $(DIETPI_BOOT_VOLUME):/dietpi-boot \
 	  -v $(DIETPI_ROOT_VOLUME):/dietpi-root \
-	  $(IMAGE_BUILDER_TAG) bash image-builder/build-image.sh \
+	  $(BUILDENV_TAG) bash image-builder/build-image.sh \
 	    build/dietpi-base.img /dietpi-boot /dietpi-root build/rpi-airplay.img
 	@echo "Built build/rpi-airplay.img"
 

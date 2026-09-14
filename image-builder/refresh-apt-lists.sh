@@ -25,7 +25,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BUILDER_TAG=rpi-airplay-image-builder
+BUILDER_TAG=rpi-airplay-buildenv
 ROOT_VOLUME=rpi-airplay-apt-refresh-root
 BOOT_VOLUME=rpi-airplay-apt-refresh-boot
 
@@ -38,7 +38,7 @@ cleanup() { docker volume rm -f "$ROOT_VOLUME" "$BOOT_VOLUME" >/dev/null 2>&1 ||
 trap cleanup EXIT
 
 echo "==> Building image-builder container"
-docker build -q -t "$BUILDER_TAG" -f Dockerfile.image-builder . >/dev/null
+docker build -q -t "$BUILDER_TAG" -f Dockerfile . >/dev/null
 
 echo "==> Extracting base image's root partition (for its real sources.list)"
 cleanup

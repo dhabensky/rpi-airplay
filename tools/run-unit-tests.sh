@@ -1,0 +1,36 @@
+#!/bin/bash
+# Compiles and runs UxPlay/tests/*.c against the shared Dockerfile tooling
+# image. A non-zero exit here (an assert() firing, or a segfault) IS the
+# fail signal -- `make unit-tests` succeeding at all means every test
+# passed. UxPlay/ is bind-mounted read-only and copied to a container-local
+# path first, same reasoning as tools/build-uxplay.sh (keep the host's
+# submodule checkout untouched).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+docker build -q -t rpi-airplay-buildenv -f Dockerfile .
+
+docker run --rm \
+  -v "$PWD/UxPlay":/mnt/UxPlay-src:ro \
+  rpi-airplay-buildenv \
+  bash -c '
+    set -euo pipefail
+    mkdir -p /src
+    cp -r /mnt/UxPlay-src /src/UxPlay
+    cd /src/UxPlay/tests
+
+    # Zero dependencies beyond the one function under test -- no GStreamer,
+    # no mocking. See the test file'"'"'s own header comment for why this matters.
+    gcc -O0 -g -Wall -Wextra -Werror \
+      -o /tmp/test_raop_conn_policy \
+      test_raop_conn_policy.c ../lib/raop_conn_policy.c
+    /tmp/test_raop_conn_policy
+
+    # Pulls in renderers/audio_renderer.c directly (file-static symbols) --
+    # needs GStreamer + the app plugin'"'"'s headers (gst/app/gstappsrc.h).
+    gcc -O0 -g -Wall \
+      -o /tmp/test_bus_callback_null_renderer \
+      test_bus_callback_null_renderer.c \
+      $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-app-1.0)
+    /tmp/test_bus_callback_null_renderer
+  '

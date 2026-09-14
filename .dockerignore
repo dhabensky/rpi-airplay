@@ -1,10 +1,11 @@
-# No Dockerfile in this repo ever COPYs anything from these -- only
-# Dockerfile.uxplay-buildtest copies UxPlay/, nothing else touches the
-# build context at all. Without this, every single `docker build .`
-# (even one that's otherwise fully cache-hit) has to hash/tar the entire
-# repo directory first, including build/'s multi-GB scratch images and
-# golden-reference/'s multi-GB SD card backups -- pure wasted time on
-# every build, not just the first one.
+# Dockerfile has no COPY at all -- it's tooling-only; every actual build
+# action (compiling uxplay_debug, running unit tests, etc.) bind-mounts
+# its source via `docker run` instead. But the classic builder still
+# hashes/tars the entire build context up front regardless of whether
+# anything in the Dockerfile actually reads it, so without this, every
+# single `docker build .` (even one that's otherwise fully cache-hit) pays
+# that cost against build/'s multi-GB scratch images -- pure wasted time
+# on every build, not just the first one.
 build/
 golden-reference/
 .git/

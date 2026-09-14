@@ -1,4 +1,5 @@
-// Build: docker run --rm -v "$PWD":/w -w /w uxplay-build gcc -O2 -o build/capx tools/capx.c
+// Build: docker build -q -t rpi-airplay-buildenv -f Dockerfile . && \
+//   docker run --rm -v "$PWD":/w -w /w rpi-airplay-buildenv gcc -O2 -o build/capx tools/capx.c
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>

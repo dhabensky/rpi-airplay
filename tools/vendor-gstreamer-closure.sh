@@ -5,9 +5,9 @@
 # by tools/setup.sh's manual live-Pi path, copied over separately since
 # that script never runs Docker).
 #
-# Approach: in a disposable environment with the FULL gstreamer-plugins-
-# good/bad/base/libav/alsa closure installed (Dockerfile.gstreamer-closure),
-# walk each allowlisted plugin's `ldd` closure (which is already the full
+# Approach: in the shared Dockerfile tooling image (which has the FULL
+# gstreamer-plugins-good/bad/base/libav/alsa closure installed), walk each
+# allowlisted plugin's `ldd` closure (which is already the full
 # transitive dependency set -- no manual recursion needed), then vendor only
 # the files whose owning Debian package is NOT already going to be present
 # on the target Pi (per a package manifest, e.g. golden-reference's).
@@ -143,11 +143,11 @@ manifest_abs="$(cd "$(dirname "$manifest")" && pwd)/$(basename "$manifest")"
 mkdir -p "$outdir"
 outdir_abs="$(cd "$outdir" && pwd)"
 
-docker build -q -t gstreamer-closure -f Dockerfile.gstreamer-closure . >/dev/null
+docker build -q -t rpi-airplay-buildenv -f Dockerfile . >/dev/null
 
 docker run --rm \
   -v "$PWD":/work -w /work \
   -v "$manifest_abs":/tmp/target-manifest.txt:ro \
   -v "$outdir_abs":/tmp/out \
-  gstreamer-closure \
+  rpi-airplay-buildenv \
   bash tools/vendor-gstreamer-closure.sh --in-container /tmp/target-manifest.txt /tmp/out

@@ -5,8 +5,8 @@
 # file I/O), then debugfs/mcopy read the filesystem image files directly.
 #
 # Usage: image-builder/extract-partitions.sh <base.img> <out-boot-dir> <out-root-dir>
-# Intended to run inside the image-builder container (Dockerfile.image-builder),
-# which has e2fsprogs/dosfstools/mtools/fdisk installed.
+# Intended to run inside the shared Dockerfile tooling image, which has
+# e2fsprogs/dosfstools/mtools/fdisk installed.
 set -euo pipefail
 
 img="${1:?usage: $0 <base.img> <out-boot-dir> <out-root-dir>}"

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Provisions a DietPi (Debian 13 "trixie", arm64) Raspberry Pi 3B+ to run the
-# uxplay_debug binary (built via ../Dockerfile.uxplay-buildtest) as a headless
+# uxplay_debug binary (built via ../tools/build-uxplay.sh) as a headless
 # AirPlay mirror receiver: kmssink direct-to-display + v4l2h264dec hardware
 # decode + ALSA HDMI audio, no X11/window system.
 #

@@ -1388,3 +1388,49 @@ hardware: `systemctl is-active` confirmed `uxplay`/`avahi-daemon`/
 at the right paths, `journalctl -u uxplay` showed a clean start with no
 errors, and `dns-sd -B _airplay._tcp` from the Mac confirmed the
 receiver actually advertises itself ("Living Room TV@rpi-airplay").
+
+## 2026-09-14: consolidated 5 Dockerfiles into 1 shared image
+
+`Dockerfile.{uxplay-buildtest,unit-tests,image-builder,gstreamer-closure,
+drmdump-buildtest}` all pinned the identical Debian base digest with
+overlapping package sets, each producing its own separate image. First
+attempt misread the ask as "one file, multiple docker build targets" (a
+multi-stage Dockerfile still producing 5 separate tagged images) --
+corrected to the actual goal: one real image. Replaced with a single
+`Dockerfile` (union of every package all 5 needed) plus a hard rule: this
+image only ever contains tooling, never a baked-in build action or
+copied-in source. Every actual build/test step now runs via `docker run`
+with source bind-mounted read-only:
+- `tools/build-uxplay.sh` (new) -- compiles uxplay_debug, used by `make
+  uxplay`, `tools/deploy.sh`, and `tools/verify-reproducible-build.sh`
+  (previously each carried its own copy of the same docker invocation).
+- `tools/run-unit-tests.sh` (new) -- compiles+runs `UxPlay/tests/*.c`;
+  the pass/fail signal moved from "docker build succeeds" to "docker run
+  succeeds" (mechanism changed, outward behavior didn't).
+- `tools/build-drmdump.sh` (new) -- the previously-manual, undocumented
+  drmdump/drmpaint build now has a real script.
+- `image-builder`/`gstreamer-closure`'s scripts already followed this
+  pattern (tools/vendor-gstreamer-closure.sh's own `--in-container`
+  self-dispatch), just needed the shared tag.
+
+Verified, not just asserted: `make uxplay` produces a uxplay_debug
+byte-identical (sha256 `f7145b5a...`) to the last pre-consolidation
+build; `make unit-tests`, `make vendor-gstreamer`, and a full `make
+image` + `make verify` all pass against the shared image. `docker
+images` confirmed down to one project image (`rpi-airplay-buildenv`) --
+6 stale tags from the old separate Dockerfiles removed.
+
+Real finding surfaced along the way, not yet fixed: `make verify`'s Tier
+B caught `libgstallocators-1.0.so.0` content drift after this rebuild --
+because unlike `image-builder/customize-root.sh` (fixed 2026-09-14
+earlier today to install against a frozen `image-builder/apt-lists/`
+snapshot), the shared Dockerfile's own `apt-get update && install` for
+build TOOLING (cmake, the gstreamer-plugins-* used to compute the
+vendored closure, etc.) still queries live Debian/DietPi/RPi Foundation
+mirrors -- the exact same drift class, just in the build environment
+instead of the shipped image. Doesn't affect what ships to the Pi
+(apt-lists already controls that), but does mean `build/vendor-
+gstreamer/`'s exact byte content can drift between otherwise-identical
+runs whenever the Dockerfile changes enough to invalidate Docker's
+layer cache. Flagged to the user rather than silently expanding scope
+further; not fixed yet.
