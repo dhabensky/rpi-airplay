@@ -374,6 +374,24 @@ first counted request).
   infrastructure file, different mode, confirmed unchanged).
 - `tools/test-audio-reconnect-latency-e2e.sh` (from earlier the same
   day): PASS, unaffected.
+- **End-to-end recovery-time comparison** (`-resendrecoverycheck`,
+  `docs/threadtest.md`, manual one-off verification, prompted by a fair
+  challenge that request-count alone doesn't prove faster recovery):
+  against pre-fix code (`lib/raop_buffer.c` temporarily reverted,
+  rebuilt, restored after), the same synthetic gap+channel-contention
+  scenario doesn't resolve via a clean resend at all -- `RAOP_BUFFER_LENGTH`'s
+  256-entry cap force-flushes the buffer at ~1.27s, silently discarding
+  the missing content (253 keepalive packets at 5ms predicts 1.265s,
+  matching almost exactly). This lines up with the real capture too: by
+  the end of each real ~2.8s dropout, the buffer's backlog had grown to
+  ~259 sequence numbers, right at this same cap -- suggesting the real
+  dropouts likely ended the same way (a silent content drop, not a
+  successful resend). Against the fix, the identical scenario resolves
+  via a genuine clean resend in ~10ms on the first request, three
+  consecutive runs (recovery times 0.0102s/0.0102s -- effectively
+  identical). Graphs generated and shown to the user directly (not
+  committed -- one-off diagnostic images, `build/audio-viz/`,
+  gitignored).
 - **Not done, explicitly deferred**: a real `-d -capture` session on the
   actual Pi confirming the ~2.8s dropouts observed in the second live
   capture actually stop happening. The user is away from home; this is
@@ -382,5 +400,8 @@ first counted request).
 
 ## Fixed in
 
-Main repo: pending commit. UxPlay submodule: pending commit (`lib/raop_buffer.c`
-the fix, `uxplay.cpp` the new `-resendstormcheck` driver).
+Main repo: `e4a84f6` (fix + docs + new test), `a1778ba` (submodule bump
+for the incidental `-mp4` fixes). UxPlay submodule: `5222900` (the fix
+itself + `-resendstormcheck`), `9b2fffa` (incidental `-mp4` mux-to-file
+fixes found while building a visualization), plus the
+`-resendrecoverycheck` driver mode (pending commit as of this write-up).

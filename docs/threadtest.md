@@ -128,6 +128,36 @@ current working tree and asserts the count stays under a threshold well
 below the unfixed 1:1 packet-to-request ratio — see
 `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.
 
+## `-resendrecoverycheck`: end-to-end recovery-time comparison (no Pi/network needed)
+
+```
+uxplay -vs 0 -resendrecoverycheck
+```
+
+Same setup as `-resendstormcheck` (real `controlPort`, permanent 5-7 gap,
+5ms keepalive stream), but this mode actually answers resend requests --
+modeling a contended channel instead of a real lossy WiFi link, which a
+loopback Docker interface can't reproduce: each received resend-request
+pushes a `channel_busy_until` deadline forward, and the driver only sends
+the real missing packets once that deadline passes. Prints
+`RECV-REQUEST`/`RECOVERED` markers.
+
+Used once (manually, not via a committed e2e script -- this was a one-off
+verification, not a standing regression guard) to answer "does the fix
+actually shorten recovery, not just reduce request count": against
+unfixed code (temporarily reverted `lib/raop_buffer.c`, rebuilt, restored
+after), the model doesn't converge on its own -- `RAOP_BUFFER_LENGTH`'s
+256-entry cap (`lib/raop_buffer.c`) force-flushes the buffer first,
+silently discarding the lost content instead of ever completing a clean
+resend (253 keepalive packets at 5ms matches the observed ~1.27s almost
+exactly). This lines up with the real capture too: by the end of each
+real ~2.8s dropout, the buffer's backlog had grown to ~259 sequence
+numbers, right at the same cap. Against the fix, the same scenario
+resolves via a genuine clean resend in ~10ms on the first request. Not a
+literal prediction of "2.8s" -- a model demonstrating the mechanism
+(fewer redundant requests leaves the buffer nowhere near its overflow
+threshold), not a physical WiFi simulation.
+
 ## `tools/test-audio-reconnect-latency-e2e.sh`: reconnect-latency regression guard
 
 Drives plain `-threadtest N` (not a separate mode) and measures, per cycle,
