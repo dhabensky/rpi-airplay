@@ -6,8 +6,8 @@ Label: Debian Backports
 Suite: stable-backports
 Codename: trixie-backports
 Changelogs: https://metadata.ftp-master.debian.org/changelogs/@CHANGEPATH@_changelog
-Date: Mon, 14 Sep 2026 02:07:18 UTC
-Valid-Until: Mon, 21 Sep 2026 02:07:18 UTC
+Date: Mon, 14 Sep 2026 14:08:48 UTC
+Valid-Until: Mon, 21 Sep 2026 14:08:48 UTC
 NotAutomatic: yes
 ButAutomaticUpgrades: yes
 Acquire-By-Hash: yes
@@ -43,9 +43,9 @@ SHA256:
  bd1d7d9edb99838392c3e355bb7043f20f1e4f24a79a7aab4fedbecb463e5c80   299115 contrib/Contents-s390x
  97d17f3bebafa33456655a97942bd9542199087ad51374e91567f75a28ad6f5e    13971 contrib/Contents-s390x.diff/Index
  9be4afe42d9ee4c6493abb050079a3def7e4d9951307860501362ac57c6816b3    19841 contrib/Contents-s390x.gz
- 6282604396dbd0714c4a2e113311e38e896abc6a384127a0b2c2211402705c5c  2079205 contrib/Contents-source
- fc448e21e8a01c2488dee61cce3b696aa3a20f7dc4c5fb38bec39c0225c9a264    53241 contrib/Contents-source.diff/Index
- 0cc4bfb72c91f298f4960fcfc8d9b813d08784a8c7fc008a298d086c820ffabd   161203 contrib/Contents-source.gz
+ bdcbc7eec8dc2a5181db873fa7a6ba1d2ba523392c410c428e52df673cbbbcb3  2078400 contrib/Contents-source
+ 7b28ba2e7dd5cda51089e378f9df04c1adf1c6aef0df202000bac36407758bbc    54363 contrib/Contents-source.diff/Index
+ 8def66fc6db6a7ce66a2c581fd00ec1d17963e2e8ca3e8bddfe29beb2a2d7512   161026 contrib/Contents-source.gz
  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855        0 contrib/Contents-udeb-all
  f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec       20 contrib/Contents-udeb-all.gz
  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855        0 contrib/Contents-udeb-amd64
@@ -131,9 +131,9 @@ SHA256:
  1eaa8905c8b1b6e62280b65038f9a4697f02fd0720d550e26017b8e2de01874e    18459 contrib/i18n/Translation-en.diff/Index
  4ebeb3a0b0e6ea1d8c7fe4b741f5c7858e001887e62753a79a9594e31410cf71     7712 contrib/i18n/Translation-en.xz
  1b75472c9705e8e7a2448e94a71007ab2d33f910c9e9c2678cfd1e7b0668e49c      180 contrib/source/Release
- 093c27c0dba018a3c0371c1d01baaf8aa69c85101d8c00f24f644a1a4a3d4c06    33108 contrib/source/Sources
- 0a8dce5736f4e1200fcb0eaad6ef235375200048962e7cc5edaa9d2481fdfbd7    63339 contrib/source/Sources.diff/Index
- 3e0fc428163e418bc5ac63a32defd3e6b0a3964f3758712ff758cd0984cc9cd1     7456 contrib/source/Sources.xz
+ c3f5b893f6ecba0980933964857a55229dfa293c62846bf6d15cbe3c8c897eb2    34247 contrib/source/Sources
+ ce10770733a7e815bb846288683117b107686b2297014dd16356ca771efdbc3b    63339 contrib/source/Sources.diff/Index
+ f671cb58e645745578115e89fdc46ec8da9de5da27aad0e1d4b01ce70070088a     7592 contrib/source/Sources.xz
  74505c46e76ea5a7fd42349f1214e8e72665dd2c3b0245bee9ad41d695767729 108567180 main/Contents-all
  eac74f72f1c0a59dcbdf72e361af22cdd865e2bb765ad1b0cf105c313c76e046    63791 main/Contents-all.diff/Index
  25c92946ea46d68387dce17629e2d16bfd03c91b437a27a06a2157b3f12fbcee  6500856 main/Contents-all.gz
@@ -161,9 +161,9 @@ SHA256:
  6572f4ac709472162a80a3be0803739a03c99d954611107111dfdcd4924f2616 26903050 main/Contents-s390x
  ca879e9da4468cb473392d6308d935c959e4361895553ed01dc4f1464253dec8    63565 main/Contents-s390x.diff/Index
  b4a2984ac20f3bfdccebe4b7b71ea93ee16dcedbff9648ec43bb9fa92e5306c2  1689787 main/Contents-s390x.gz
- 9997b7fce922465df8dbbaca2e32a40ccaba203b6d1b9e84a6d9116a7acef902 128454197 main/Contents-source
- e833fbf8a02c84343f6e1b3a3ae1cf10c4d875db9f6c21599e1576c2dc12d13f    63791 main/Contents-source.diff/Index
- c05dae3385bd7174442c968e957f19fc872bf10eba3c9c009ba3f95e6004e841 10313906 main/Contents-source.gz
+ c31d08f3be3b5b23f984897d4f6c18b0cedf13e65ecdb21346d84deb222946fe 128454172 main/Contents-source
+ 8596bfad0c72fb5f4cf649c9efdbb28729a5d296833b4f421cf0a2ed21a308a2    63791 main/Contents-source.diff/Index
+ d755034ea1114e51d0623ebd14a5a39c54285e4364f47a98b5719ba477f6187e 10313874 main/Contents-source.gz
  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855        0 main/Contents-udeb-all
  f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec       20 main/Contents-udeb-all.gz
  752386d86d1e6bc0035b43218907496e5398862a0d296a5b8d310bdc5c9fa5e7  3930469 main/Contents-udeb-amd64
@@ -249,9 +249,9 @@ SHA256:
  ea7077c9285e1531861448e95e0f35693683df86820c89aa3e29d0defc067028    63339 main/i18n/Translation-en.diff/Index
  4a5365b9e8dabdd07822fc08b15ff84bb80a146e6267d798dabefe03e2330869   236892 main/i18n/Translation-en.xz
  9f6a61ab15f537ef199ecfe57b708c161416016d0211f956a5367c710e877208      177 main/source/Release
- 6334519388fd57322ffd585743c603a761490fddd65d25ba476aaa2da1b67edb  5360393 main/source/Sources
- 6f70650a3ca0774e55f4c68a731a8d6ae59f1a10d99b5bc907d7f62597d1ce22    63339 main/source/Sources.diff/Index
- bf92f319e461cbef47eb1595c842b317185127f112d0afe530a22d990d5a73b0   310124 main/source/Sources.xz
+ 08445f7a60df9c37511a43bc42f90c1e94989c45a49e8cb2b904c9d81023dc92  5361756 main/source/Sources
+ 0accba83c312207d63bce422789ddbd125a37625bbab60b07a98184f6fd8c7fd    63339 main/source/Sources.diff/Index
+ b2d9574a90c564854931bc4226cafc74c755eeae5f9c07504d68817d46d5829e   310208 main/source/Sources.xz
  5828e9a394e942f58b78866c1caf1b53c95f3f774c3c533a4e6d5560fde7192d   760564 non-free-firmware/Contents-all
  a4002c80d65b70b7a27f031acbb97986e759013bbefe049aaee1b3a368070c5b    20703 non-free-firmware/Contents-all.diff/Index
  27c4bdd5d49eff5e4b6460fe81e595afd8df5d78bb2bedce20149b3fe89a5ba9    36974 non-free-firmware/Contents-all.gz
@@ -483,29 +483,29 @@ SHA256:
  72e11478ba6b0b757c8f1116d849f6f676446fa1a474ec31adb2028809836eac     1448 non-free/source/Sources.xz
 -----BEGIN PGP SIGNATURE-----
 
-iQIzBAEBCAAdFiEETLUBkCB7R1ij9zp5btDnuCZD4TEFAmqnVwwACgkQbtDnuCZD
-4TFHbBAA4d9gZxXHjor1F0YJEUlIyiReKWb57ymgM6biGaSRfUjY2VWJRLSzhzFe
-YAtEfSfxSp/BuhOGRHkPkI1VenQPB1uo+GPvoViUgypUwLvWrBi+lAm7PWEW3UUx
-ZyKtpDsdAVuq3UAuvh4LSBK2SIMexSGF/ZEZ7qMSy8B8+3kV5A4gdtsZ7aQdDU5W
-rfDvCD/kYCV8GkcrJKtqrF3FP6fKKoF3kLjetaqymAnfT4kUDNKCtIYbEN0BbRdM
-oREmVj9YQzO25gN/m5G+kenxsiTIxMv9zV5anVm8YIHxedJ1nngpqeD5vJZKh88b
-LCk+ewszD9OGVmVwjVCjn0maD7CHRCjpHcRZ3d8bOJ3eEOw1aQVyoSceRcMFiLXd
-OwYfLmAkIjQfl4UrT6oXUFcOA5oazPJx/DXeNs2baN2D1Ua+zbRjcNc4mJYznLR5
-nj3W0mr5P3LeM4U0EnF9nr+W8unRWfS6dpGYBEcfvK3IMRvsvzGXHfuT5D3xvH56
-Oso0uVJEp0e4ucMIoa8ifalHxPfQkSAe23NOOtOLtKWqjmV1iMi1Dz0PyzGV5DNu
-B5Y4rUBbU55pxokoRXRSCzWo1Ih8iON9Fd+zo4oR9OfMShC0rMDbdqBYkVm4MJFT
-OXzP0AO1NssgPvHneidV5xmMBj88TqlRnCpOrjKXEJ4hEyZ6NY2JAjMEAQEIAB0W
-IQS45fExdtKnp1IgAoB426O8R+8iZQUCaqdXHwAKCRB426O8R+8iZbU4EACMuNVA
-SJa//U8lopaBtd8F4RMsLs89KRcp7MF2T080+eK43AWYASoc8+xGH/2aW0OYoU6B
-A3T0lzq3qBBZ5dCH1U9pEIgisrNil1+v6u+zvHhrDVo/aEY2Uhmuxz3mEothHtXG
-V/sGGfiPZ2deFD9xLOOaetKSs3+aFthTplBEwwGSUTvqz9qtDUi5Pr5EipQE4oX1
-Pipu+nkbNffXhBib8icWsocAvneNTlvepn3g4L8UddvpKrBDf+A8RWb0J9vNeJhl
-np/OE5hbQdZp9MTTK7vMJzFovmOIb4er16cSHAeoiEIFXqKJhvkwTz9W8u3LF2G8
-5vFI0F6JnsZUneNMckEvB5CQUziD3xKEOkPSZmomCPzkHidvG3G252BIGuIsL+gv
-yMCncGOlr3D6XdL6Pef1Y4pQHgyQW/FMLkg3Z2dLZlFoDjNNTQHQrXetDF3zNInY
-casq+Yagt89lSPZyq3xspDcrH3m4v/DhpxO3Ns8IV/lm4A8kv06TDA0r+ywcoySk
-L9pKHChS7qFexZPtGN/H1BqQKZNWtdZ5U3bfVcoOFFuIBPE+A5pH3ySPKUFbhcc3
-uPa5mkfCn2/02Ko3ukQW8TOtjneJ76EAKWKSokB9HyOpYe3kTLRF2tGzc00cb0GP
-wEdseHehU/g4bR9TZ1H46bT8+cQSqsvXJsxa1A==
-=JVgY
+iQIzBAEBCAAdFiEETLUBkCB7R1ij9zp5btDnuCZD4TEFAmqoADQACgkQbtDnuCZD
+4TGbFxAA1phGrATS6yvWE6sOrxkmmO+YuMm/DevrqmunvNCa6PkOX7tqdfXCz5zn
+AJV/0u17v3VNwmrnQprW6RG8VOoZCyQKbFNO4gw28RSSjve3Sd0w7hHYIAL2eBVK
+Tc1IHseU/NNc0szV3jjxWfmxfs63m2oqbEUBEei0QWWN7UcVfsU0njlnfRViMl0M
+0Nh23zolb81KYALOHB4WfUKtrdvvwaYQR75V1EssAcqYIfZRyaJijDTH5sjrc+6V
+rzbRP9GfmO3Rc4CStieWraB73Y4C4bLHRnRVOLlSd/hDGbZKT5hKpPYuiSYch9+l
+3jT1kVsqqeq0OCADi8KHYeVZdGD9cZNZIQIhcvHZmZf/GIh/DN57B/s9KkEshmbK
+tNXTccAIzUPBr3TbKvt2HM7Nb9kFmnUJxZ5JRXtRjqbTsa4Wy3HomfZZczfV5jwx
+6zXCIb9+Rt9qTYv4nmcJBHVXEXTAYnAbqUuXZ1A3vixFHkUHxD5J0ez1+hDjEgts
+RPkkYDAld/2NCKeUz7X2hXlyfZTxzW9k0W3IbsL/odJU15ZBmOHksP50fo2zaF/d
+sd2jh5P08t5oreXUDB/q6d8XjJ6eccnFz7VSY4v9BwvblDZ83TgQ0GgI293tBrau
+drk41N4ROTcGJuHJ0UePURE0ZdbyCrNISM2PCnqJ5B41AaqgoaeJAjMEAQEIAB0W
+IQS45fExdtKnp1IgAoB426O8R+8iZQUCaqgAPgAKCRB426O8R+8iZRdRD/0SPdDX
+8Pnkxzr+n2K/fSs0I69Zx9saBgXkQhI++Rman9ue9XEbC/VN/A6RNe6h+Azopk7V
+l81mZTy7Zh4J17plbQkIoymqi06OLiJTJVwjo/HD0Z7xhxihW1i3broVIcGZKisM
+4P+d0Ck2r9tIx9sMLss+XoaR88XYDr8KvTwjBjXPjBOevodjPrhbUCXBLoaIpyGq
+tCqvH9j2Nc+UVLI7pQBflbcxQNfQrITslX9+YI0KbH+WVhh3slK0tDp88c4KPpzC
+oFjxqpYyNOt9F5s1dRYjM6hObtrXZsgE7JW2KDL4UBCkKUFx3I17Wa8whUzbfL+F
+gYmk+uzyZ4i6wIdaRikbyDdEfuJr+2wzfjy3hPudHxdRmRj/i+j0HSM1so6u1qRb
+FTem8OG47Kl/tO0LlUKSvKcgJiKqnF/RgamEw4np0h1+hQ9wdAI1BDtlmCAxrj1G
+ZL7hCRCvySnODnRXygPtWJgLJCn/2YAwBTbGkPfu1UG2ltgFuitZA6XQAlRK1Sb4
+16R8tjqO9FOLWYaZXu81nkvtbYtUg8OKdnEa0e1shPqVQqPepEgq1zRgLxJu4dv3
+R71mB1mWGE3gcxNMGl+XE3BpjDBJ5lw5t7K3iMZBCse0V3VZG7msQA+pd+2T5ySp
+GXldUZ+SmJtKV/BjSwEWAuayoffEYDApM2oP3Q==
+=W4wW
 -----END PGP SIGNATURE-----

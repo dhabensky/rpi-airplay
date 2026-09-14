@@ -109,22 +109,31 @@ echo "==> Installing packages, pinned to image-builder/apt-packages.lock (avahi-
 # same setting snapshot.debian.org itself recommends for this reason).
 #
 # Freezing the index only pins which VERSION resolves -- apt-get install
-# still downloads the actual .deb bytes from the live host at install
-# time. Debian's own archive is durable enough to keep doing that live
-# (frozen index only); archive.raspberrypi.com and dietpi.com are not
-# (2026-09-14 finding), so every apt-packages.lock entry that resolves
-# from either of those (found by cross-referencing the lock file against
-# each source's own frozen index -- 27 from archive.raspberrypi.com, 0
-# from dietpi.com, see image-builder/refresh-vendored-debs.sh) is
-# installed from a locally vendored .deb
-# (image-builder/vendored-debs/, checked into git) instead of by name --
-# apt/dpkg reads a local file's own control data directly, so it needs no
-# network access and no index entry for that specific package at all.
-# The remaining ~202 packages are still `name=version` pins resolved
-# against the frozen Debian-only index below. One `apt-get install` call
-# mixing local-file and repo-name arguments (standard apt syntax) so the
-# whole 229-package closure's dependency graph resolves in one atomic
-# pass.
+# still downloads the actual .deb bytes from whatever sources.list says
+# at install time. archive.raspberrypi.com and dietpi.com are not durable
+# enough to depend on live (2026-09-14 finding), so every apt-packages.lock
+# entry that resolves from either of those (found by cross-referencing the
+# lock file against each source's own frozen index -- 27 from
+# archive.raspberrypi.com, 0 from dietpi.com, see
+# image-builder/refresh-vendored-debs.sh) is installed from a locally
+# vendored .deb (image-builder/vendored-debs/, checked into git) instead
+# of by name -- apt/dpkg reads a local file's own control data directly,
+# so it needs no network access and no index entry for that specific
+# package at all. Debian's own live archive has the SAME durability gap
+# (only keeps the latest point/security release per suite) but, unlike
+# raspi/dietpi, has an official permanent fix: snapshot.debian.org serves
+# every version ever published, forever, at a fixed dated URL. The
+# remaining ~202 packages are `name=version` pins resolved against a
+# frozen index captured FROM snapshot.debian.org at a fixed timestamp
+# (DEBIAN_SNAPSHOT / DEBIAN_SECURITY_SNAPSHOT below, must match
+# refresh-apt-lists.sh's own copy exactly -- both the frozen index and the
+# sources.list rewritten into the chroot below have to name the same
+# snapshot, or apt can't match a source's configured URI to its expected
+# local index filename). One `apt-get install` call mixing local-file and
+# repo-name arguments (standard apt syntax) so the whole 229-package
+# closure's dependency graph resolves in one atomic pass.
+DEBIAN_SNAPSHOT=20260914T142711Z
+DEBIAN_SECURITY_SNAPSHOT=20260914T183713Z
 lockfile="$(dirname "$0")/apt-packages.lock"
 aptlists="$(dirname "$0")/apt-lists"
 vendoreddebs="$(dirname "$0")/vendored-debs"
@@ -133,7 +142,13 @@ mkdir -p "$work/var/lib/apt/lists/partial"
 # dead weight here now that nothing below references a package by name
 # from either (vendored packages are referenced by local file path, which
 # needs no index entry at all).
-cp "$aptlists"/deb.debian.org_* "$work/var/lib/apt/lists/"
+cp "$aptlists"/snapshot.debian.org_* "$work/var/lib/apt/lists/"
+cat > "$work/etc/apt/sources.list" <<EOF
+deb https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ trixie main contrib non-free non-free-firmware
+deb https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ trixie-updates main contrib non-free non-free-firmware
+deb https://snapshot.debian.org/archive/debian-security/${DEBIAN_SECURITY_SNAPSHOT}/ trixie-security main contrib non-free non-free-firmware
+deb https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ trixie-backports main contrib non-free non-free-firmware
+EOF
 cp /etc/resolv.conf "$work/etc/resolv.conf"
 mkdir -p "$work/tmp/vendored-debs"
 cp "$vendoreddebs"/*.deb "$work/tmp/vendored-debs/"

@@ -1095,3 +1095,72 @@ Also verified (outside `make verify`, not itself part of Tier D): re-ran
 frozen index + the 27 local vendored `.deb` files -- direct proof, not just
 "true by construction," that the image build no longer needs
 `archive.raspberrypi.com` reachable.
+
+## 2026-09-14T21:06:41Z
+- golden-reference snapshot: `golden-reference/snapshots/2026-09-14/`
+- built image: `build/rpi-airplay.img` (52a07a5bbc08...)
+- UxPlay submodule commit: `c768aba`
+```
+debugfs 1.47.2 (1-Jan-2025)
+Extracted boot partition -> /tmp/compare-work/boot (422 files)
+Extracted root partition -> /tmp/compare-work/root (13291 files)
+=== TIER A: package manifest ===
+PASS: package selections identical
+
+=== TIER B: file-tree content (root partition, minus EXCLUDE-LIST.md) ===
+DIFF: 13 files differ in content on shared paths (see build/compare/tierb-mismatches.txt)
+  (golden-only paths: 16, candidate-only paths: 3 -- expected for routine
+   package version bumps; see REBUILD-STATUS.md accepted-delta notes, not auto-failed here)
+
+=== TIER B (boot partition, minus known macOS-mount junk) ===
+PASS: all 422 shared boot files match content
+  (golden-only paths: 0, candidate-only paths: 0)
+
+=== TIER C: binary-exact (uxplay_debug + vendor GStreamer) ===
+DIFF: uxplay_debug differs (golden=f7145b5ac591d7fbcf8b9a358c7fbb67197a3c2dc2fcda8b3f66d87b9fdd69e7 candidate=7bf84ee43c0799660a95d703e7e59ee432d3e432f0c6681a0e66c3b610011635) --
+  expected ONLY if the UxPlay submodule commit changed since the golden capture;
+  a mismatch against a build of the SAME commit is a real reproducibility bug.
+PASS: all vendored GStreamer files match exactly
+
+=== TIER D: functional smoke test ===
+BLOCKED: no spare SD card/Pi available for a real flash+boot+AirPlay test (see plan).
+
+=== TIER E: raw disk bit-diff ===
+N/A by design: the .img is the deliverable, not a byte-diff target (see plan's reframing).
+```
+
+This run followed pointing Debian's own apt source at snapshot.debian.org
+(a fixed, date-pinned historical archive) instead of live deb.debian.org,
+closing the same byte-freeze gap just fixed for raspi, for the 202
+Debian-origin pins. Tier B's 13 deltas are 1 more than the previous run's
+12; the new one is `./etc/apt/sources.list`, and it is the entire point
+of the change: golden-reference was captured while sources.list pointed
+at live deb.debian.org, and this build's sources.list now points at
+snapshot.debian.org instead -- expected to differ from here on, not a
+reproducibility bug.
+
+Along the way, tracking down why `apt-get update` against
+snapshot.debian.org's sources.list entries hung indefinitely (pegged CPU,
+near-zero network throughput, reproduced and confirmed via `strace` on
+the actual `_apt` https worker) turned up a real, previously-latent bug
+in `extract-partitions.sh`: `debugfs rdump` can't recreate device nodes,
+so it silently substitutes an empty regular file for each one --
+`/dev/null` ends up mode 644, owned by root, so apt's unprivileged `_apt`
+worker gets `EACCES` the moment it needs to write to it (confirmed via
+strace: it does this to drain a redirect response body it doesn't need,
+which snapshot.debian.org's CDN triggers but dietpi.com/
+archive.raspberrypi.com's direct responses happen not to). Fixed by
+recreating the standard minimal `/dev` nodes with real major/minor
+numbers right after `debugfs rdump` in `extract-partitions.sh` --
+applies to every consumer of that script, not just this change. Verified
+by reproducing the hang, confirming the strace root cause, applying the
+fix, and re-running the exact same command clean (9.5s, exit 0).
+
+Also verified (outside `make verify`, not itself part of Tier D): re-ran
+`extract-partitions.sh` + `customize-root.sh` manually via `docker run`
+with `snapshot.debian.org`, `deb.debian.org`, AND
+`archive.raspberrypi.com` all DNS-blackholed via `--add-host`. Install
+completed with exit code 0 -- direct proof that the full 229-package
+install (202 via the frozen snapshot.debian.org index + matching
+sources.list, 27 via local vendored-debs/) needs none of the three
+original hosts reachable at all.

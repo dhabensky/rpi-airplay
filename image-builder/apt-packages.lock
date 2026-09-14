@@ -32,6 +32,18 @@
 # nothing here needs to change to reflect that split -- it's the exact
 # same pins either way. Re-running `refresh-vendored-debs.sh` after a
 # re-pin picks up any changes to which 27 (if any) those are.
+#
+# The other 202 resolve from Debian's own archive, which has the same
+# byte-freeze gap (freezing the index only pins the version, not where
+# the download bytes come from) but, unlike raspi/dietpi, has an official
+# permanent fix: image-builder/apt-lists/'s Debian-origin files are
+# captured FROM snapshot.debian.org at a fixed timestamp (see
+# refresh-apt-lists.sh's DEBIAN_SNAPSHOT / DEBIAN_SECURITY_SNAPSHOT), and
+# customize-root.sh points its own chroot's sources.list at the same
+# timestamp before installing -- confirmed all 202 pins below still
+# resolve there (2026-09-14). No packages here are vendored by hand for
+# this reason; snapshot.debian.org's whole purpose is to make that
+# unnecessary.
 avahi-daemon=0.8-16
 dbus-bin=1.16.2-2
 dbus-daemon=1.16.2-2
