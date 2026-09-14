@@ -243,21 +243,32 @@ A/V sync).
    needs a copy of `build/vendor-gstreamer/` transferred alongside it,
    since it never runs Docker itself.
 2. **Package installs are frozen against a checked-in apt index, not a
-   live mirror.** `customize-root.sh` installs `apt-packages.lock`'s
-   pins against `image-builder/apt-lists/` (captured once by `make
-   refresh-apt-lists`, ~11MB of package metadata, no `.deb` binaries)
-   instead of calling `apt-get update` — Debian only publishes the
-   *current* version of each package in its live index, so a pinned
-   version can vanish the moment upstream ships a point/security
-   release, breaking the build for reasons that have nothing to do with
-   an intentional change here. The two files must be regenerated
-   together (see `apt-packages.lock`'s header). Residual gap: this only
-   freezes the *index* — the actual `.deb` bytes still come from the
-   live network on a cache miss, and `archive.raspberrypi.com`/
-   `dietpi.com/apt` (unlike Debian's own mirrors) have no dated-snapshot
-   service at all, so a package sourced from either could in principle
-   still disappear from the pool itself, not just the index, over a
-   long enough horizon.
+   live mirror — for both the shipped Pi image and the build tooling.**
+   `customize-root.sh` installs `apt-packages.lock`'s pins against
+   `image-builder/apt-lists/` (captured once by `make refresh-apt-lists`,
+   ~11MB of package metadata, no `.deb` binaries); `Dockerfile` installs
+   its own tooling packages against the top-level `apt-lists/` (captured
+   once by `make refresh-buildenv-apt-lists`, a *different* apt source —
+   the plain Debian base image's, not the customized DietPi rootfs's).
+   Neither calls `apt-get update` — Debian only publishes the *current*
+   version of each package in its live index, so a pinned version (or,
+   for the Dockerfile, anything resolved fresh) can vanish the moment
+   upstream ships a point/security release, breaking the build for
+   reasons that have nothing to do with an intentional change here; for
+   the Dockerfile specifically, this was caught live via `make verify`'s
+   Tier B after a Dockerfile edit busted Docker's layer cache and pulled
+   a different `libgstallocators-1.0.so.0` into `build/vendor-
+   gstreamer/` (see `PROGRESS.md`'s 2026-09-14 entry). `apt-packages.lock`
+   and `image-builder/apt-lists/` must be regenerated together (see that
+   file's header); the Dockerfile's `apt-lists/` has no separate lock
+   file — freezing the index alone is sufficient there, since a fresh
+   container with no prior state resolves a fixed index deterministically.
+   Residual gap either way: this only freezes the *index* — the actual
+   `.deb` bytes still come from the live network on a cache miss, and
+   `archive.raspberrypi.com`/`dietpi.com/apt` (unlike Debian's own
+   mirrors) have no dated-snapshot service at all, so a package sourced
+   from either could in principle still disappear from the pool itself,
+   not just the index, over a long enough horizon.
 3. **The systemd unit's `ExecStart` embeds hand-tuned pipeline flags**
    (`kmssink force-modesetting=true qos=false ts-offset=300000000`,
    `-vd v4l2h264dec -vc identity`) that came from extensive empirical

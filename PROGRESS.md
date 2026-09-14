@@ -1434,3 +1434,28 @@ gstreamer/`'s exact byte content can drift between otherwise-identical
 runs whenever the Dockerfile changes enough to invalidate Docker's
 layer cache. Flagged to the user rather than silently expanding scope
 further; not fixed yet.
+
+**Fixed same day, on request**: `tools/refresh-buildenv-apt-lists.sh`
+(new) captures the plain Debian base image's own apt index (a
+*different* source than `image-builder/apt-lists/` -- the base image
+has no DietPi/RPi Foundation repos configured, only `deb.debian.org`
+main/updates/security) into a new top-level `apt-lists/`, checked into
+git. `Dockerfile` now `COPY apt-lists/ /var/lib/apt/lists/` and installs
+with `Acquire::Check-Valid-Until=false` instead of `apt-get update` --
+same fix as `customize-root.sh`'s, one level up in the build tooling.
+No separate lock file needed here (unlike `apt-packages.lock`): a fresh
+container with no prior dpkg state resolves a fixed index
+deterministically on its own.
+
+Verified: rebuilt the buildenv image (frozen index resolves fine, no
+`apt-get update` call), then regenerated `build/vendor-gstreamer/`
+*twice* independently -- `libgstallocators-1.0.so.0` (and everything
+else) landed byte-identical both times, proving the freeze actually
+holds. `make uxplay` still byte-identical, `make unit-tests` still
+passes, full `make image` + `make verify` still shows Tier A/uxplay_debug/
+boot-partition PASS. One expected, self-inflicted Tier B diff remains on
+that exact file: the frozen index was captured *after* today's live
+drift already happened, so it froze the drifted value, not this
+morning's golden-reference value -- resolves the same way the earlier
+apt-lists fix did, by recapturing golden-reference from a fresh flash,
+not yet done.

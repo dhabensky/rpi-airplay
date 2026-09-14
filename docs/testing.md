@@ -76,6 +76,10 @@ Requires: Docker only.
   a live mirror. A build-input tool, not a pass/fail test — see
   `apt-packages.lock`'s header for why this exists and how the two must
   be regenerated together.
+- **`tools/refresh-buildenv-apt-lists.sh`** — same fix, for `Dockerfile`'s
+  own build-tooling packages (a different apt source: the plain Debian
+  base image's, not the customized DietPi rootfs's) — captures into the
+  top-level `apt-lists/`.
 
 ## Boot-adjacent checks (local Linux container, no real hardware)
 

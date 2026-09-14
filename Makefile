@@ -6,7 +6,8 @@
 # graph and the one documented entry point, not where the actual logic
 # lives.
 .PHONY: image image-xz uxplay vendor-gstreamer base-image golden-reference verify \
-        reproducible-check refresh-base-image refresh-apt-lists test-boot test-resize clean
+        reproducible-check refresh-base-image refresh-apt-lists refresh-buildenv-apt-lists \
+        test-boot test-resize clean
 
 # One shared tooling image (see Dockerfile's own header) for every
 # disposable build/test/tool environment this project uses.
@@ -52,11 +53,11 @@ base-image: build/dietpi-base.img
 # inside the container, so a non-zero exit (an assert() firing) fails this
 # recipe.
 .PHONY: unit-tests
-unit-tests: Dockerfile $(shell find UxPlay/tests UxPlay/lib/raop_conn_policy.* UxPlay/renderers/audio_renderer.c -type f 2>/dev/null)
+unit-tests: Dockerfile $(shell find apt-lists -type f 2>/dev/null) $(shell find UxPlay/tests UxPlay/lib/raop_conn_policy.* UxPlay/renderers/audio_renderer.c -type f 2>/dev/null)
 	./tools/run-unit-tests.sh
 
 # --- uxplay binary (native arm64 via colima/Docker) ---
-build/uxplay_debug: Dockerfile $(shell find UxPlay -maxdepth 1)
+build/uxplay_debug: Dockerfile $(shell find apt-lists -type f 2>/dev/null) $(shell find UxPlay -maxdepth 1)
 	./tools/build-uxplay.sh build/uxplay_debug
 
 # --- vendor GStreamer closure ---
@@ -64,7 +65,7 @@ build/uxplay_debug: Dockerfile $(shell find UxPlay -maxdepth 1)
 # against (see EXCLUDE-LIST.md / capture.sh) -- uses the most recent
 # snapshot found under golden-reference/snapshots/.
 LATEST_SNAPSHOT := $(shell ls -d golden-reference/snapshots/*/ 2>/dev/null | sort | tail -1)
-build/vendor-gstreamer/MANIFEST.md: Dockerfile tools/gstreamer-plugin-allowlist.txt tools/vendor-gstreamer-closure.sh
+build/vendor-gstreamer/MANIFEST.md: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/gstreamer-plugin-allowlist.txt tools/vendor-gstreamer-closure.sh
 	@if [ -z "$(LATEST_SNAPSHOT)" ]; then \
 	  echo "ERROR: no golden-reference snapshot found -- run 'make golden-reference' first" >&2; exit 1; \
 	fi
@@ -88,6 +89,7 @@ build/rpi-airplay.img: build/uxplay_debug build/vendor-gstreamer/MANIFEST.md bui
                           image-builder/apt-packages.lock $(shell find image-builder/apt-lists -type f) \
                           image-builder/customize-boot.sh \
                           image-builder/build-image.sh Dockerfile \
+                          $(shell find apt-lists -type f 2>/dev/null) \
                           $(PERSONAL_ENV)
 	docker build -q -t $(BUILDENV_TAG) -f Dockerfile .
 	docker volume rm -f $(DIETPI_ROOT_VOLUME) $(DIETPI_BOOT_VOLUME) >/dev/null 2>&1 || true
@@ -152,6 +154,11 @@ refresh-base-image:
 # snapshot, whenever you actually want package versions to move.
 refresh-apt-lists: base-image
 	./image-builder/refresh-apt-lists.sh
+
+# Same fix, for the shared Dockerfile's own build-tooling packages instead
+# of the shipped Pi image's (see that script's header).
+refresh-buildenv-apt-lists:
+	./tools/refresh-buildenv-apt-lists.sh
 
 # Fast local functional check without an SD card: boots the built image's
 # root filesystem via systemd-nspawn on colima's own VM (real aarch64 Linux,
