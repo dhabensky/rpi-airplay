@@ -1030,3 +1030,68 @@ BLOCKED: no spare SD card/Pi available for a real flash+boot+AirPlay test (see p
 === TIER E: raw disk bit-diff ===
 N/A by design: the .img is the deliverable, not a byte-diff target (see plan's reframing).
 ```
+
+## 2026-09-14T20:06:43Z
+- golden-reference snapshot: `golden-reference/snapshots/2026-09-14/`
+- built image: `build/rpi-airplay.img` (9eaaef8b224e...)
+- UxPlay submodule commit: `c768aba`
+```
+debugfs 1.47.2 (1-Jan-2025)
+Extracted boot partition -> /tmp/compare-work/boot (422 files)
+Extracted root partition -> /tmp/compare-work/root (13292 files)
+=== TIER A: package manifest ===
+PASS: package selections identical
+
+=== TIER B: file-tree content (root partition, minus EXCLUDE-LIST.md) ===
+DIFF: 12 files differ in content on shared paths (see build/compare/tierb-mismatches.txt)
+  (golden-only paths: 16, candidate-only paths: 4 -- expected for routine
+   package version bumps; see REBUILD-STATUS.md accepted-delta notes, not auto-failed here)
+
+=== TIER B (boot partition, minus known macOS-mount junk) ===
+PASS: all 422 shared boot files match content
+  (golden-only paths: 0, candidate-only paths: 0)
+
+=== TIER C: binary-exact (uxplay_debug + vendor GStreamer) ===
+DIFF: uxplay_debug differs (golden=f7145b5ac591d7fbcf8b9a358c7fbb67197a3c2dc2fcda8b3f66d87b9fdd69e7 candidate=7bf84ee43c0799660a95d703e7e59ee432d3e432f0c6681a0e66c3b610011635) --
+  expected ONLY if the UxPlay submodule commit changed since the golden capture;
+  a mismatch against a build of the SAME commit is a real reproducibility bug.
+PASS: all vendored GStreamer files match exactly
+
+=== TIER D: functional smoke test ===
+BLOCKED: no spare SD card/Pi available for a real flash+boot+AirPlay test (see plan).
+
+=== TIER E: raw disk bit-diff ===
+N/A by design: the .img is the deliverable, not a byte-diff target (see plan's reframing).
+```
+
+This run followed vendoring the 27 archive.raspberrypi.com-origin packages
+into `image-builder/vendored-debs/` (installed as local `.deb` files in the
+same `apt-get install` call as the remaining 202 Debian-origin pins, instead
+of resolving `archive.raspberrypi.com` at install time). Tier B's 12 deltas
+are 2 more than the previous run's 10; both new ones are accounted for and
+unrelated to that change:
+
+- `./usr/lib/aarch64-linux-gnu/libgstallocators-1.0.so.0` — not caused by
+  the vendoring change (it isn't apt-installed at all; it comes from the
+  separate `build/vendor-gstreamer/` closure, driven by the top-level
+  `Dockerfile`/`apt-lists/`). Commit `ced7dae` (buildenv apt-freeze, earlier
+  the same day) already documents this exact symptom in its own message:
+  golden-reference was captured at 09:03 UTC+3, before that commit landed at
+  10:34, so golden's copy reflects the pre-freeze live-Debian pull and any
+  build since `ced7dae` differs from it regardless of this change. Tier C's
+  own "vendored GStreamer files" check passes because it compares the
+  closure's output against what actually landed in *this* build, not
+  against golden -- a self-consistency check, not a golden comparison.
+- `./etc/default/uxplay` — only written when `personal.env` sets
+  `OVERSCAN_*` (image-builder/customize-root.sh baking in this machine's TV
+  overscan compensation at build time). Same class as the already-documented
+  host-identity deltas: depends on whatever `personal.env` contained when
+  golden was captured vs. now, not on anything apt-related.
+
+Also verified (outside `make verify`, not itself part of Tier D): re-ran
+`extract-partitions.sh` + `customize-root.sh` manually via `docker run` with
+`--add-host archive.raspberrypi.com:127.0.0.1 --add-host deb.debian.org:127.0.0.1`
+(both DNS-blackholed). Install completed with exit code 0 using only the
+frozen index + the 27 local vendored `.deb` files -- direct proof, not just
+"true by construction," that the image build no longer needs
+`archive.raspberrypi.com` reachable.

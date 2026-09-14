@@ -107,13 +107,78 @@ echo "==> Installing packages, pinned to image-builder/apt-packages.lock (avahi-
 # re-run. Check-Valid-Until=false because that frozen index is expected
 # to outlive its originally-published validity window by design (the
 # same setting snapshot.debian.org itself recommends for this reason).
+#
+# Freezing the index only pins which VERSION resolves -- apt-get install
+# still downloads the actual .deb bytes from the live host at install
+# time. Debian's own archive is durable enough to keep doing that live
+# (frozen index only); archive.raspberrypi.com and dietpi.com are not
+# (2026-09-14 finding), so every apt-packages.lock entry that resolves
+# from either of those (found by cross-referencing the lock file against
+# each source's own frozen index -- 27 from archive.raspberrypi.com, 0
+# from dietpi.com, see image-builder/refresh-vendored-debs.sh) is
+# installed from a locally vendored .deb
+# (image-builder/vendored-debs/, checked into git) instead of by name --
+# apt/dpkg reads a local file's own control data directly, so it needs no
+# network access and no index entry for that specific package at all.
+# The remaining ~202 packages are still `name=version` pins resolved
+# against the frozen Debian-only index below. One `apt-get install` call
+# mixing local-file and repo-name arguments (standard apt syntax) so the
+# whole 229-package closure's dependency graph resolves in one atomic
+# pass.
 lockfile="$(dirname "$0")/apt-packages.lock"
-pinned_packages="$(grep -v '^#' "$lockfile" | grep -v '^$' | tr '\n' ' ')"
 aptlists="$(dirname "$0")/apt-lists"
+vendoreddebs="$(dirname "$0")/vendored-debs"
 mkdir -p "$work/var/lib/apt/lists/partial"
-cp "$aptlists"/* "$work/var/lib/apt/lists/"
+# Only Debian's own index: archive.raspberrypi.com's and dietpi.com's are
+# dead weight here now that nothing below references a package by name
+# from either (vendored packages are referenced by local file path, which
+# needs no index entry at all).
+cp "$aptlists"/deb.debian.org_* "$work/var/lib/apt/lists/"
 cp /etc/resolv.conf "$work/etc/resolv.conf"
-chroot "$work" bash -c "DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Check-Valid-Until=false install -y -qq --no-install-recommends $pinned_packages"
+mkdir -p "$work/tmp/vendored-debs"
+cp "$vendoreddebs"/*.deb "$work/tmp/vendored-debs/"
+install_args="$(python3 - "$lockfile" "$aptlists"/archive.raspberrypi.com_debian_dists_trixie_main_binary-arm64_Packages.xz <<'PYEOF'
+import lzma, sys
+
+lockfile, raspi_packages_xz = sys.argv[1], sys.argv[2]
+
+def parse_packages(data):
+    entries = {}
+    name = version = fname = None
+    for line in data.decode("utf-8", errors="replace").split("\n"):
+        line = line.rstrip("\r")
+        if line.startswith("Package: "):
+            name = line[len("Package: "):]
+        elif line.startswith("Version: "):
+            version = line[len("Version: "):]
+        elif line.startswith("Filename: "):
+            fname = line[len("Filename: "):]
+        elif line == "":
+            if name and version:
+                entries[(name, version)] = fname
+            name = version = fname = None
+    return entries
+
+with open(raspi_packages_xz, "rb") as f:
+    raspi_index = parse_packages(lzma.decompress(f.read()))
+
+args = []
+with open(lockfile) as f:
+    for line in f:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, version = line.split("=", 1)
+        if (name, version) in raspi_index:
+            import os
+            args.append("/tmp/vendored-debs/" + os.path.basename(raspi_index[(name, version)]))
+        else:
+            args.append(f"{name}={version}")
+print(" ".join(args))
+PYEOF
+)"
+chroot "$work" bash -c "DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Check-Valid-Until=false install -y -qq --no-install-recommends $install_args"
+rm -rf "$work/tmp/vendored-debs"
 chroot "$work" bash -c 'DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq dropbear dropbear-bin 2>/dev/null || true'
 chroot "$work" bash -c 'apt-get autoremove -y -qq'
 if [ "$apt_cache_mounted" = 0 ]; then

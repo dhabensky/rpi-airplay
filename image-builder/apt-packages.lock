@@ -20,6 +20,18 @@
 # Pins captured 2026-09-09. image-builder/apt-lists/'s snapshot is newer
 # (2026-09-14) but still resolves every pin below unchanged -- confirmed
 # by a successful build; see PROGRESS.md if that ever stops being true.
+#
+# Of these 229, 27 resolve from archive.raspberrypi.com and are installed
+# from a locally vendored .deb (image-builder/vendored-debs/, see
+# image-builder/refresh-vendored-debs.sh) instead of the frozen index --
+# that host is far less durable than Debian's own archive, and freezing
+# the index only pins the VERSION, not where the download bytes come
+# from. customize-root.sh figures out which pins below are the vendored
+# 27 automatically (cross-referencing this file against
+# image-builder/apt-lists/archive.raspberrypi.com_*_Packages.xz), so
+# nothing here needs to change to reflect that split -- it's the exact
+# same pins either way. Re-running `refresh-vendored-debs.sh` after a
+# re-pin picks up any changes to which 27 (if any) those are.
 avahi-daemon=0.8-16
 dbus-bin=1.16.2-2
 dbus-daemon=1.16.2-2
