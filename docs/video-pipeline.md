@@ -16,7 +16,7 @@ architecture is fragile or actively racy, that's called out explicitly in
 | **Main thread** | (process start) | Runs `main()`'s `reconnect:` loop: calls `main_loop()` (blocks in `g_main_loop_run()`), and on return, conditionally does the full pipeline destroy+rebuild (`uxplay.cpp:3667-3700`). All `GMainLoop` timeout/idle/bus-watch callbacks registered inside `main_loop()` also run here. |
 | **httpd thread** | `httpd.c:699`, once, for the process lifetime | The **only** thread that runs `httpd_thread()` (`httpd.c:360`) — a single `select()`-based event loop handling **every** RTSP/HTTP request serially. For video, its relevant duty is the TEARDOWN handler (`raop_handlers.h:1298`/`1314`) calling `video_reset()`. (Its audio-side duties are documented in `docs/audio-pipeline.md`.) |
 | **RAOP mirror thread** | `raop_rtp_mirror.c:932`, once per mirror session | Runs `raop_rtp_mirror_thread()` — reads incoming video RTP/H264 data, decrypts, calls `video_set_codec()` (→ `video_renderer_choose_codec()`, `raop_rtp_mirror.c:638,717`) and `video_process()` (→ `video_renderer_render_buffer()`, `uxplay.cpp:2725`). |
-| **video-blank thread** (`g_blank_display_thread`) | `video_renderer.c:1200`, ad hoc, joined before the next pipeline init (`video_renderer.c:991-994`) | "Throwaway videotestsrc pipeline" blanking mechanism (`video_renderer.c:965-1042`), used by `video_renderer_destroy()`'s blanking call on a **full** reconnect/teardown. A separate mechanism from `video_renderer_hide_video()` (see below). |
+| **video-blank thread** (`g_blank_display_thread`) | `video_renderer.c:1200`, ad hoc, joined before the next pipeline init (`video_renderer.c:991-994`) | "Throwaway videotestsrc pipeline" blanking mechanism (`video_renderer.c:965-1042`), used by `video_renderer_destroy()`'s blanking call on a **full** reconnect/teardown. |
 
 Plus, **not a named thread in this codebase but real**: every GStreamer
 element that does async work runs its own internal thread(s) managed by
@@ -58,8 +58,9 @@ globals and the same GStreamer pipeline objects, with real synchronization
 existing in exactly one place (`video_renderer_ready`) and nowhere else.
 
 See `docs/framebuffers-and-drm-planes.md` for how kmssink's video overlay
-plane (98) relates to the DRM primary plane (86) — directly relevant to
-the `HIDDEN` state below.
+plane (98) relates to the DRM primary plane (86) — relevant whenever
+plane 98 doesn't cover the full screen (e.g. pillarbox margins for
+non-16:9 content).
 
 ## Video pipeline state machine (informal — no enum exists in code)
 
@@ -92,12 +93,13 @@ the flags above and the transitions they gate.
                          |                  | :1298 or :1314)           |
                          |                  v                          |
                          |    +----------------------------+           |
-                         |    |  HIDDEN                    |           |
+                         |    |  FROZEN                    |           |
                          |    |  (skip_video_rebuild=true,  |           |
                          |    |   pipeline still alive and  |           |
-                         |    |   decoding, render-rectangle|           |
-                         |    |   pushed off-screen via     |           |
-                         |    |   video_renderer_hide_video)|           |
+                         |    |   decoding, but nothing new |           |
+                         |    |   to render until the next  |           |
+                         |    |   connection's frames -- the|           |
+                         |    |   last frame stays on screen|           |
                          |    +----------------------------+           |
                          |                  |                          |
                          |                  | next connection's        |
@@ -125,8 +127,10 @@ Two structurally different "the client went away" paths exist and are
 **not the same mechanism**:
 - **Fast path** (`skip_video_rebuild=true`): pipeline is kept alive —
   load-bearing for re-mirror, since tearing it down instead breaks
-  re-mirroring entirely. Visually hidden via `video_renderer_hide_video()`
-  rather than showing a frozen frame.
+  re-mirroring entirely. Nothing currently hides the resulting frozen
+  last frame; it stays on screen until the next connection's frames
+  arrive or the slow/eventual path's timeout blanks it (see "Known race
+  windows" below for why an earlier attempt at hiding it was reverted).
 - **Slow/eventual path** (`feedback_callback`'s `-reset N` timeout, default
   60s): full `video_renderer_destroy()` + throwaway-blank-pipeline +
   `video_renderer_init()` + `video_renderer_start()` — the only path that

@@ -4,9 +4,7 @@
 # during a real boot, well after zero-fb0 (uxplay.service's ExecStartPre)
 # already ran once, early. Whatever's on fb0 becomes visible wherever
 # nothing else covers the screen -- the TV's pillarbox margins for
-# non-16:9 content, and (since video_renderer_hide_video() moves the
-# ENTIRE video plane off-screen on disconnect) the whole screen after
-# mirroring stops. A `-replay`-based test can't catch this at all, since
+# non-16:9 content. A `-replay`-based test can't catch this at all, since
 # -replay never goes through a real boot -- this needs the actual kernel
 # cmdline / systemd boot sequence, so this test reboots the real device.
 #
@@ -84,8 +82,8 @@ echo "  $FB0_DIFF"
 if echo "$FB0_DIFF" | grep -q "^/dev/fb0 /dev/zero differ"; then
   echo
   echo "=== RESULT: FAIL -- /dev/fb0 has non-zero content well after boot ==="
-  echo "Whatever's on fb0 shows through the TV's pillarbox margins and the"
-  echo "whole screen after a disconnect. Pull a copy and look at it:"
+  echo "Whatever's on fb0 shows through the TV's pillarbox margins during"
+  echo "mirroring. Pull a copy and look at it:"
   echo "  sshpass -p $SSH_PASS scp ${SSH_OPTS[*]} $TARGET:/dev/fb0 build/fb0-fail.raw"
   echo "  ffmpeg -f rawvideo -pixel_format rgb565le -video_size 1920x1080 \\"
   echo "    -i build/fb0-fail.raw -frames:v 1 build/fb0-fail.png"

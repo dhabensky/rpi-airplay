@@ -9,7 +9,7 @@ dozens of DRM planes (`tools/drmdump.c` enumerates all of them: 43, 62,
 74, 86, 98, 109, 120, ... up to 659 on this hardware) — standard for an
 atomic-KMS driver offering multiple overlay/cursor planes per CRTC. **Only
 two are ever actually driven by this project**, and understanding both —
-and which is which — is what `docs/video-pipeline.md`'s `HIDDEN` state
+and which is which — is what the pillarbox-margin boot-text issue below
 turns on.
 
 ## Plane 86 — the primary plane
@@ -51,25 +51,20 @@ turns on.
   h265 share this in practice, since only one codec is ever active per
   session).
 - Geometry is fully dynamic, driven live by kmssink's `render-rectangle`
-  property — the **same mechanism** backs both the overscan feature
-  (inset margins) and the frozen-frame-hide feature (pushed off-screen via
-  a large negative X, see `video_renderer_hide_video()`).
+  property — currently only used by the overscan feature (inset margins).
 - Composites **on top of** the primary plane wherever it covers it
   (standard DRM overlay-plane stacking) — the primary plane is never
   actually invisible, just normally fully covered.
 
 ## Why this matters (the actual bug-class connection)
 
-Wherever plane 98 does **not** cover the full screen — either because the
-mirrored content genuinely isn't 16:9 (pillarbox margins) or because
-`video_renderer_hide_video()` deliberately pushed it off-screen (`HIDDEN`
-state, `docs/video-pipeline.md`) — **plane 86's content shows through in
-the gap**, and plane 86's content is governed entirely by the kernel's
-fbcon, a subsystem this codebase has no direct runtime control over beyond
-the one-shot `zero-fb0` script and the two kernel-cmdline flags above.
-"Pillarbox margins show boot text instead of black" and "screen after
-disconnect shows boot text instead of black" are the exact same root
-cause, just visible through two different gaps in plane 98's coverage.
+Wherever plane 98 does **not** cover the full screen — currently only
+because the mirrored content genuinely isn't 16:9 (pillarbox margins) —
+**plane 86's content shows through in the gap**, and plane 86's content
+is governed entirely by the kernel's fbcon, a subsystem this codebase
+has no direct runtime control over beyond the one-shot `zero-fb0` script
+and the two kernel-cmdline flags above. This is why pillarbox margins
+show boot text instead of black without those fixes.
 
 **Tooling note**: `tools/drmdump.c` reads both planes' live atomic
 properties *and* dumps their actual pixel content — this is the only
