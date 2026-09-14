@@ -4,6 +4,16 @@ Status: **root cause understood; underlying feature reverted rather than
 patched forward again (2026-09-13) pending a properly planned fix informed
 by `docs/video-audio-threading-and-state-machine.md`.**
 
+**2026-09-14 note**: this doc's root cause
+(`video_renderer_hide_video()` blocking the httpd thread's TEARDOWN
+response) can no longer be active -- that feature stayed reverted and is
+confirmed absent from the current codebase. The live investigation for
+audio-resume/seek latency continues in
+`docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`, which found a
+different mechanism (client-paced TEARDOWN(96)+SETUP audio-only
+renegotiation, not video/mirror teardown). This doc is kept for its own
+historical record, not as the current diagnosis.
+
 ## 2026-09-13 update: reverted instead of patched
 
 Given this was the *third* same-night regression from the same feature
