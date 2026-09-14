@@ -1459,3 +1459,49 @@ drift already happened, so it froze the drifted value, not this
 morning's golden-reference value -- resolves the same way the earlier
 apt-lists fix did, by recapturing golden-reference from a fresh flash,
 not yet done.
+
+## 2026-09-14: audio-resume-latency-on-seek investigated -- no server-side
+defect found, up to 0.5s target confirmed met for the mechanism measured
+
+New requirement: audio lag after seeking during mirroring must be <=0.5s;
+user reported up to 3s. A real capture (`-d -capture`, mirror + seek 3-4
+times) showed only **one** RTSP event across the whole session --
+`TEARDOWN(96)+SETUP(96)`, audio-only, not video/mirror -- the other 2-3
+seeks left no trace anywhere checked (no FLUSH, no PTS-rebase, no
+self-heal). That one event: ~1.0s total, ~0.71s client-paced (the client
+deciding when to re-SETUP after our `Connection: close`-bearing TEARDOWN
+response -- unconditional, unmodified upstream behavior), ~0.31s of cheap
+server work (same-codec restart, no pipeline rebuild). The user's own
+"threads killed and recreated" hypothesis was checked directly and ruled
+out: `raop_rtp_stop()`'s thread join is bounded to ~5-10ms by its own 5ms
+`select()` loop. `video_renderer_blank_display()`'s real, documented
+up-to-~4s join was a strong early lead but only fires on the slow/
+eventual 60s-`-reset`-timeout path, never on an ordinary seek's fast path
+(`docs/video-pipeline.md`'s state machine).
+
+One real sample isn't proof there's no rare slow outlier, so extended
+`-threadtest` (already drives the real `httpd.c`/`raop.c` stack over
+loopback in Docker, no hardware) to actually measure it repeatably:
+turned out it had never sent a real RTCP sync packet, so every audio
+packet across every cycle silently sat in `raop_rtp.c`'s jitter buffer
+forever (`initial_sync` cold-start guard) -- previously undiscovered
+since nothing had driven it this far. Fixed the driver (sync packet sent
+twice per cycle for UDP-loss robustness, plus a `RECV-TEARDOWN-response`
+timestamp), wrote `tools/test-audio-reconnect-latency-e2e.sh`: 50
+back-to-back reconnect cycles with zero artificial gap measured mean
+0.22s / max 0.24s, stable across the whole run, no growth; a
+1s-paced run for comparison landed at ~1.23s, matching (gap +
+that same ~0.22s) almost exactly -- confirming the zero-gap numbers are
+representative, not a loopback-timing artifact.
+
+**Conclusion**: nothing measured anywhere in this investigation (real
+capture or 34+ synthetic cycles) comes close to 3s -- the highest number
+seen at all is ~1.24s. No server-side code fix was written because none
+is evidenced; the new test is committed as a permanent regression guard
+against a *future* change introducing slow server-side reconnect
+processing on this path. The reported 3s worst case remains
+unexplained -- candidates not yet investigated: a `teardown_110`/video-
+mirror reconnect path (never captured or synthetically driven), or
+whatever decides which seeks trigger a TEARDOWN/SETUP renegotiation at
+all versus the silent majority that didn't. Full writeup:
+`docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.
