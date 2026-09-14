@@ -1622,3 +1622,45 @@ report success until a fresh live capture directly confirms the ~2.8s
 gaps are actually gone -- given fix #1's "verified synthetically, deployed,
 turned out insufficient" outcome earlier the same day, synthetic evidence
 alone is explicitly not being treated as sufficient this time.
+
+## 2026-09-14 (final): fix #2 confirmed on real hardware; "regression"
+report traced to the capture tool itself, not the fix
+
+Redeployed fix #2 (checksum-verified), this time arming the capture
+*before* asking the user to test -- the sequencing mistake from fix #1's
+deploy, corrected. Long real mirror+seek session (~316s, 5 seek-triggered
+reconnects) captured. **User's verdict: "looks fixed."** Confirmed in the
+capture: largest gap anywhere in the whole session was 1.46s, down from
+the original ~2.8-3s -- a real, large improvement.
+
+User then reported a new concern: "small audio stutter on long playback."
+Segmented the long capture by its 6 SETUP/TEARDOWN boundaries (to avoid
+comparing sequence numbers across unrelated reconnect sessions) and
+classified every gap >=50ms by whether the sequence number actually
+jumped (real content loss) or stayed consecutive (packet just arrived
+late, nothing lost). Of 46 such gaps, 38 (83%) showed zero content loss --
+mechanically impossible for fix #2 to cause, since `raop_buffer_dequeue()`'s
+new code only runs when a slot is genuinely empty. Only 8 gaps showed a
+real seqnum jump (fix #2's actual mechanism), 0.2-1.19s each -- better
+than the ~2.8s baseline throughout, but not a strict sub-500ms guarantee
+when an entire burst is lost at once (the stall check only re-evaluates
+when the RTP thread's `select()` loop wakes on real socket activity, so a
+quiet stretch after a burst loss can push the actual skip past the
+nominal 200ms -- documented as a known remaining limitation, not silently
+overclaimed as fully fixed).
+
+The user independently retested on normal (non-captured) playback,
+couldn't reproduce the stutter, and suggested the capture itself was the
+cause. Confirmed in the code: `cap_write()` runs synchronously on both the
+audio and video threads sharing one mutex, with a periodic `fflush()`
+every 50 combined records (~0.3-0.4s) -- a real, already-documented
+tradeoff in that function's own comment from a past session. Matches the
+data exactly (delay without content loss). Confirmed `-capture` is never
+active in the real `uxplay.service`. **Conclusion: diagnostic-tooling
+artifact, not a regression -- no production code change needed.** Added a
+note to `docs/audio-pipeline.md` so a future live-capture session doesn't
+re-diagnose the same non-bug from scratch.
+
+Both fixes committed and pushed (main repo `b87ce20`, UxPlay submodule
+`c768aba`, plus this closeout). Bug fully resolved. Full writeup:
+`docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.

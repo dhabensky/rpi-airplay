@@ -128,6 +128,25 @@ or Pi hardware — including matching the synthetic keepalive rate to
 AAC-ELD's real cadence, which turned out to matter: an earlier, faster,
 arbitrary rate under-predicted the real-world stall duration by ~2x.
 
+**`-capture` itself can introduce small timing artifacts, worth knowing
+before chasing a "stutter" as a real bug**: `cap_write()`
+(`UxPlay/uxplay.cpp`) is called synchronously from both the audio and
+video processing threads, sharing one mutex, with a periodic `fflush()`
+every 50 combined records (roughly every 0.3-0.4s at typical write
+rates) — a real, already-known tradeoff (see that function's own
+comment: flushing every record was tried first and found to "visibly lag
+live playback"). A real long-session capture during the 2026-09-14
+investigation showed 83% of its small (tens-to-hundreds-of-ms) gaps had
+*zero* content loss (consecutive sequence numbers, packet just arrived
+late) — mechanically impossible for anything in `raop_buffer.c` to cause,
+since that code only ever activates on a genuinely empty slot. Confirmed
+capture-tooling-only: the user couldn't reproduce the same stutter on
+normal (non-captured) playback, and `-capture` is never active in the
+real `uxplay.service` (no `-capture` flag in
+`image-builder/files/etc/systemd/system/uxplay.service`'s `ExecStart=`).
+If a future live-capture session shows small, content-loss-free gaps,
+check this before assuming a new regression.
+
 ## GStreamer pipeline construction (per format)
 
 `audio_renderer_init()` (`audio_renderer.c:131`, called once at startup,

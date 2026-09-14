@@ -1,9 +1,13 @@
 # Audio resume latency on seek/scrub (target: <=0.5s, observed: up to 3s)
 
-Status: **Two fixes. The first was real but insufficient (deployed,
-confirmed via a real capture to have zero effect); the second (2026-09-14,
-same day) is the one that actually bounds the dropout duration — pending
-real-hardware confirmation after redeploying.**
+Status: **RESOLVED, confirmed on real hardware (2026-09-14).** Two fixes:
+the first was real but insufficient (deployed, confirmed via a real
+capture to have zero effect on the reported symptom); the second is what
+actually bounds the dropout duration, and was confirmed live: "looks
+fixed" after redeploying and a long real mirror+seek session. See "Real
+hardware confirmation" below for the full close-out, including a
+follow-up "regression" report that turned out to be a diagnostic-tooling
+artifact, not a real bug.
 
 **Fix #1 — resend-request rate limiting** (`RAOP_RESEND_MIN_INTERVAL_NS`,
 `lib/raop_buffer.c`, 100ms): `lib/raop_buffer.c`'s resend-request logic
@@ -459,6 +463,65 @@ resend -- confirmed a stuck packet keeps getting resent (27 "resent audio
 packet: seqnum=35455" log lines) without ever being consumed until the
 buffer fills.
 
+## Real hardware confirmation (2026-09-14)
+
+Fix #2 deployed the same way as fix #1 (checksum-verified via SSH), this
+time with the capture armed *before* asking the user to test (the
+sequencing mistake from fix #1's deploy, corrected). Long real
+mirror+seek session (~316s, 5 seek-triggered reconnects) captured with
+`-d -capture`. User's verdict: **"looks fixed."** Confirmed independently
+in the capture: the largest gap anywhere in the whole session was 1.46s
+(down from the original ~2.8-3s), and every genuine content-loss gap
+(seqnum actually jumped, not just delayed) stayed under ~1.2s -- a real,
+large improvement, though not a strict sub-500ms guarantee in every
+possible case (see "Known remaining limitation" below).
+
+**Follow-up report: "small audio stutter on long playback."** Analyzed
+the same long capture, segmented by the 6 SETUP/TEARDOWN boundaries to
+avoid comparing sequence numbers across unrelated sessions. Of 46 gaps
+>=50ms across the whole session, 38 (83%) showed **no content loss at
+all** (consecutive sequence numbers -- the packet arrived and dequeued
+normally, just later than usual). `raop_buffer_dequeue()`'s stall-timeout
+code only executes when a slot is genuinely empty, so these 38 cannot be
+caused by fix #2 -- confirmed by reading the code, not just inferred from
+the data. Only 8 gaps showed a real sequence-number jump (genuine
+loss/skip, fix #2's actual mechanism), ranging 0.2-1.19s.
+
+The user independently tested again on normal (non-captured) playback and
+**could not reproduce the stutter**, and suggested the capture itself was
+the cause. Confirmed in the code: `cap_write()` (`UxPlay/uxplay.cpp`) is
+called synchronously from *both* the audio and video processing threads,
+sharing one mutex, with a periodic `fflush()` every 50 combined
+audio+video records (roughly every 0.3-0.4s at typical combined write
+rates) -- a real, already-documented tradeoff in that function's own
+comment (flushing every record was tried before and found "expensive
+enough... to visibly lag live playback"; batching to 50 was the existing
+mitigation, not eliminating the effect, just reducing its frequency).
+This matches the data exactly: a shared-mutex disk-flush stall would
+delay packet processing on the audio thread without ever dropping
+content, precisely the "consecutive seqnum, just late" signature seen in
+83% of the gaps. Confirmed `-capture` is diagnostic-only and never active
+in normal operation (`image-builder/files/etc/systemd/system/uxplay.service`'s
+`ExecStart=` has no `-capture` flag). **Conclusion: capture-tooling
+artifact, not a regression from either fix; no production code change
+needed for this report.**
+
+## Known remaining limitation
+
+Fix #2's 200ms stall timeout is a *check interval*, not a hard wall-clock
+guarantee: it only gets re-evaluated when `raop_buffer_dequeue()` is
+called, which only happens when the RTP thread's `select()` loop wakes on
+real socket activity. If an entire burst of packets is lost together,
+there can be a quiet stretch (nothing arriving at all) before the next
+real packet wakes the thread and the already-elapsed timeout is noticed
+-- observed directly in the confirmation capture: the two largest
+genuine-loss gaps (0.75s and 1.19s, 38 and 68 packets lost respectively)
+exceeded the nominal 200ms by a wide margin for this reason. Still a very
+large improvement over the pre-fix ~2.8s in every observed case, but not
+a strict sub-500ms bound under all real-world conditions. Not addressed
+further as of this write-up -- flagged here rather than overclaiming a
+hard guarantee that the mechanism doesn't actually provide.
+
 ## Fixed in
 
 **Fix #1 (resend-request rate limiting), deployed and found
@@ -470,5 +533,6 @@ fixes found while building a visualization), `59c5dcc`
 -- see `docs/threadtest.md`'s correction note). Main repo `635d28f`
 (recovery-time verification writeup).
 
-**Fix #2 (stall-timeout force-skip), the one that actually matters**:
-pending commit as of this write-up.
+**Fix #2 (stall-timeout force-skip), the one that actually matters,
+confirmed on real hardware**: Main repo `b87ce20`, UxPlay submodule
+`c768aba`.
