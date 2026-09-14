@@ -100,6 +100,34 @@ own (no long-lived server loop). Driven by
 tree and asserts the RTP-timestamp-to-NTP-time sync state reset in
 `raop_rtp_start_audio()` behaves correctly (see `docs/audio-pipeline.md`).
 
+## `-resendstormcheck`: resend-request rate-limit regression check
+
+```
+uxplay -vs 0 -resendstormcheck
+```
+
+A third, narrower scripted-client mode. Unlike every other mode here, it
+declares a **real, non-zero `controlPort`** in its SETUP request (every
+other mode uses `0`, which sets `no_resend=true` and skips the resend-wait
+path entirely — see "What the driver does" above) — this is the only mode
+that actually exercises `lib/raop_buffer.c`'s resend-request logic. Binds
+its own local UDP socket first and puts that port in the SETUP request;
+the server learns to route resend requests back to it from the source
+address of the sync packet sent immediately after (`lib/raop_rtp.c`'s
+`got_remote_control_saddr` handling reads the *source* of the first
+packet arriving on its control channel, not the SETUP body directly, so
+sending the sync packet from any other socket wouldn't work).
+
+Sends audio packets 0-4, then permanently skips seqnums 5-7 (never sent,
+to anyone), then keeps sending one packet roughly every 5ms for 1s while
+counting distinct resend-request packets (8 bytes, `packet[1] == 0xD5`)
+arriving back on its own socket. Prints `RESEND-REQUEST-COUNT <n> (in
+1.0s, sent <n> keepalive packets)`. Runs to completion and exits on its
+own. Driven by `tools/test-audio-resend-storm-e2e.sh`, which builds the
+current working tree and asserts the count stays under a threshold well
+below the unfixed 1:1 packet-to-request ratio — see
+`docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.
+
 ## `tools/test-audio-reconnect-latency-e2e.sh`: reconnect-latency regression guard
 
 Drives plain `-threadtest N` (not a separate mode) and measures, per cycle,

@@ -60,6 +60,37 @@ above this reset (`raop_rtp.c:670-687`) already guarantees the previous
 audio thread has fully exited and been joined before it runs, so no lock
 is needed around the reset itself.
 
+## Resend-request rate limiting
+
+`lib/raop_buffer.c` holds a strict in-order jitter buffer
+(`RAOP_BUFFER_LENGTH` = 256 entries): `raop_buffer_dequeue()`
+(`raop_buffer.c:229`) refuses to return anything past the first missing
+sequence number, correct for AAC-ELD's decode ordering requirement.
+`raop_buffer_handle_resends()` (`raop_buffer.c:294`) is called on every
+iteration of the RAOP audio thread's `select()` loop that real socket
+activity wakes (its timeout branch does a bare `continue`, skipping this
+call entirely — `raop_rtp.c:421-441`) and asks the client to resend
+whatever's still missing at the front of the buffer, via
+`raop_rtp_resend_callback()` (`raop_rtp.c:199`).
+
+Rate limited (`RAOP_RESEND_MIN_INTERVAL_NS`, `raop_buffer.c`, 100ms) since
+2026-09-14: `raop_buffer->last_resend_first_seqnum`/
+`last_resend_request_ns` track the most recent request, and a call for
+the *same* still-missing `first_seqnum` within the interval is skipped —
+a genuinely new gap (a different `first_seqnum`) always fires
+immediately, unchanged from before this existed. Before this fix, the
+loop fired a brand-new duplicate resend request on literally every wake,
+with zero memory of having just asked — confirmed via a real capture
+showing ~760 duplicate requests and 1000-2800 resent-packet responses
+per ~2.8s real audio dropout on seek (the network congestion a seek's own
+large H.264 I-frame burst creates was enough to lose a handful of audio
+packets; flooding that same congested link with redundant control-channel
+traffic plausibly extended, not shortened, recovery time). See
+`docs/bugs/2026-09-14-audio-resume-latency-on-seek.md` for the full
+capture analysis, and `docs/threadtest.md`'s `-resendstormcheck` section
+for how this is regression-tested (`tools/test-audio-resend-storm-e2e.sh`)
+without needing real packet loss or Pi hardware.
+
 ## GStreamer pipeline construction (per format)
 
 `audio_renderer_init()` (`audio_renderer.c:131`, called once at startup,

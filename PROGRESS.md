@@ -1505,3 +1505,60 @@ mirror reconnect path (never captured or synthetically driven), or
 whatever decides which seeks trigger a TEARDOWN/SETUP renegotiation at
 all versus the silent majority that didn't. Full writeup:
 `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.
+
+## 2026-09-14 (later): the real audio-dropout cause found and fixed --
+resend-request flood in `lib/raop_buffer.c`, no rate limiting at all
+
+User pushed back hard on the conclusion above: real dropouts happened
+multiple times in one mirror+seek session, all before "done" was said --
+if nothing was found, the wrong thing was being looked at. Re-armed a
+capture; a first attempt was cut short by killing the process ~2.9s
+after the one TEARDOWN, before the next SETUP arrived -- an own mistake
+(proved nothing either way), not a null result. Second attempt ran
+normally to completion.
+
+**Real finding**: searching the raw `raop_rtp audio: now = ...` RTP
+packet timeline directly (not just RTSP request/response lines) surfaces
+three, and only three, real gaps -- **2.82s, 2.81s, 2.86s** -- matching
+the reported "up to 3s" almost exactly, both in count and duration.
+**Zero RTSP signaling accompanies any of them** (no TEARDOWN/SETUP/
+FLUSH), and **video streams completely normally through all three**
+(84-86 video packets each, normal spacing) -- ruling out a client-side
+"whole pipeline paused to rebuffer" theory. Root cause, read directly
+from `lib/raop_buffer.c`/`lib/raop_rtp.c`: a handful of audio UDP packets
+get lost (plausibly to the WiFi congestion the seek's own large H.264
+I-frame burst creates -- 10-77KB video packets immediately precede each
+gap, vs ~1-2KB steady state), and `raop_buffer_handle_resends()`
+(called on every iteration of the RTP thread's 5ms-timeout `select()`
+loop) fires a **brand new duplicate resend request every single time**,
+with zero memory of having just asked -- confirmed by direct count:
+~760 duplicate requests and 1000-2800 resent-packet responses per gap,
+all three. Pristine, unmodified upstream (`FDH2/UxPlay`) code (`git diff
+df67c21 HEAD -- lib/raop_buffer.c` is empty) -- not something this fork
+introduced, but a real, fixable receiver-side policy bug: flooding an
+already-congested link with redundant control-channel traffic plausibly
+extends, not shortens, recovery time.
+
+**Fixed**: `lib/raop_buffer.c` now rate-limits repeat requests for the
+*same* still-missing gap to once per 100ms (`RAOP_RESEND_MIN_INTERVAL_NS`)
+-- the *first* request for any new gap is completely unaffected, matching
+pre-fix behavior exactly for the common single-packet-loss-on-a-healthy-
+network case. **New test infrastructure**, since `-threadtest`'s driver
+deliberately never exercises the resend path (`controlPort=0` in its
+SETUP request): `-resendstormcheck` (`uxplay.cpp`), a scripted client
+that opts into a real resend-wait session, creates a permanent 3-packet
+gap, and counts resend requests over a fixed window --
+`tools/test-audio-resend-storm-e2e.sh` drives it. **Verified**: manually
+confirmed the flood against pre-fix code first (200 duplicate requests/s,
+three runs, all 200), then confirmed the fix (10/s, three runs, all 10)
+-- a clean 20x reduction, matching the math exactly (1000ms / 100ms).
+Full regression suite re-run clean: `make unit-tests`,
+`tools/test-audio-ntp-resync-e2e.sh`, `tools/test-audio-reconnect-latency-e2e.sh`.
+
+**Not yet done**: real-hardware confirmation that the actual dropouts
+stop happening. The user moved away from home mid-session (Pi
+unreachable) -- everything above was built and verified entirely via
+Docker/`-threadtest`-style loopback driving, no Pi needed for any of it,
+but the final "does this actually fix what was heard" check needs a
+fresh `-d -capture` session once they're back. Full writeup:
+`docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.
