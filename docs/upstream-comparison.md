@@ -27,18 +27,13 @@ raop_rtp_stop(raop_rtp);
 ```
 
 Added in submodule commit `268e168` (2026-09-11), while investigating the
-"redundant SETUP reports port 0" bug below. The comment describes a
-**separate, never-actually-fixed** failure mode that turned out, on
-2026-09-13, to be the leading hypothesis for the currently-open
-`bugs/2026-09-13-audio-dies-on-repeated-track-switch-setup.md` — see
-`docs/audio-pipeline.md`'s "The `conn_request()` finding" section for the
-full mechanism. Upstream has no such warning because upstream's
-`conn_request()` is functionally identical here — this is purely a
-log-level and comment change, not a behavior change from upstream. The
-*behavior* being warned about (unconditional teardown of an existing
-`RAOP` connection's audio/mirror/NTP services whenever a new `AIRPLAY`-type
-connection is classified) is **upstream's own original behavior**,
-unmodified by this fork.
+"redundant SETUP reports port 0" bug below. **This baseline's behavior has
+since diverged further from upstream**: `conn_request()` now calls
+`raop_should_teardown_existing_connection()` (`lib/raop_conn_policy.h`)
+before tearing down an existing `RAOP` connection's services, leaving them
+alone when the new `AIRPLAY`-type connection is from the same remote
+address — see `docs/audio-pipeline.md` for the current classification
+logic. Upstream still tears down unconditionally.
 
 ## `lib/raop_handlers.h` (2 lines added)
 

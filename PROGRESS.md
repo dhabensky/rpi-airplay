@@ -1102,3 +1102,210 @@ during any of this verification. The image has not been rebuilt or
 reflashed with this fix -- the SD card was inside the running Pi, not the
 Mac's reader, so that step needs the card physically moved first. See the
 bug doc's own "Fixed in" section for the complete list.
+
+## 2026-09-13 (later still): the fix above FAILED against a real
+reproduction -- new, better-evidenced hypothesis found; still unconfirmed
+
+Exactly the gap flagged above turned out to matter: the user reproduced
+the bug live against the Fix-A+Fix-B binary ("reproduced. no audio after
+track switch"). The real capture's log
+(`tools/captures/audio-dies-realworld-20260913.cap`) shows **neither**
+the original unconditional-teardown line **nor** Fix A's new skip-log
+line ever firing -- `conn_request()`'s AIRPLAY-branch teardown block was
+most likely never reached at all in this reproduction. Section 5's
+`conn_request()` hypothesis is no longer believed to be this bug's actual
+cause (at least not for this reproduction). Immediately re-armed the Pi
+with full `-d` debug logging plus a fresh `-capture`, awaiting a second
+reproduction to get the `LOGGER_DEBUG`-level confirmation this needs.
+
+While waiting, re-read `lib/raop_handlers.h`'s SETUP handler against the
+same failed-reproduction capture and found a much better fit: the log
+shows two `AUDIO SETUP response` lines with **genuinely different
+ports** and **zero teardown-related log line between them**, on what was
+confirmed to be the *same* RTSP connection (only one "connection request
+from ..." line, ever). `raop_handlers.h:907-909`, inside the "first
+SETUP" branch (`raop_handlers.h:630`, gated on the RSA-encrypted key blob
+being present), unconditionally sets `conn->raop_ntp` /`conn->raop_rtp` /
+`conn->raop_rtp_mirror` to `NULL` with **no destroy call first** -- unlike
+`conn_destroy()`'s defensive equivalent (`raop.c:576-586`, explicitly
+commented "in case TEARDOWN was not called"). If a real client resends
+this "first SETUP" a second time on the same connection (plausible for a
+Now-Playing/media-session renegotiation on track switch -- no second RTSP
+*connection* needed at all), the previous `raop_rtp_t`/
+`raop_rtp_mirror_t`/`raop_ntp_t` objects and their live threads are
+silently orphaned rather than stopped, while a second, fully independent
+set gets created and started -- deterministically producing exactly the
+observed signature (fresh ports, zero teardown trace) as a consequence of
+the code, not a race. Full trace, including why this fits better than
+section 5 and the prepared (not yet implemented) candidate fix: bug doc
+section 9, `docs/audio-pipeline.md`'s new "Update" section.
+
+**Explicitly not yet confirmed, and deliberately not implemented or
+deployed pending confirmation** -- this session already shipped one
+plausible-but-wrong hypothesis as "the fix" once; not repeating that.
+Confirmation needs the `LOGGER_DEBUG`-level lines ("SETUP 1",
+`raop_handlers.h:637`; "eport = ..., tport = ...", `raop_handlers.h:935`)
+appearing **twice** for one connection in the armed debug capture, still
+awaiting the user's next reproduction attempt as of this writing.
+
+**Also delivered this segment** (the two tasks assigned while the user
+tested manually, both complete and independent of the above):
+- **Innermost-layer audio verification**: extended the existing, already
+  opt-in/zero-cost `av_sync_probe()` (`renderers/video_renderer.c:273`,
+  gated behind `UX_PROBE`/`UX_PROBE_DBG`, never compiled into the hot path
+  unless explicitly enabled) to also compute a genuine average-absolute-
+  amplitude reading (`avg_abs`) in the *same* single pass over each S16LE
+  audio buffer that already computes `loud_pct` -- a real "is decoded
+  audio actually flowing" signal, distinct from the sync-test-specific
+  loud-burst heuristic, printed alongside it in the existing
+  `APROBE loud_pct=... avg_abs=...` debug line. No new mechanism, no new
+  env var, no second buffer pass. Verified: `make uxplay` builds clean,
+  `make unit-tests` still passes both suites.
+- **`docs/replay-real-threads-plan.md`** (new): a grounded design plan
+  (not implemented) for why `-replay`'s single-thread callback-injection
+  model structurally cannot exercise `conn_request()`/`raop_handler_setup
+  ()` or real `raop_rtp_mirror_thread`/`raop_rtp_thread_udp` instances --
+  and a staged design (real RTSP dispatch + real RAOP threads, still
+  feeding decoded media the existing way; full encrypted-wire replay as a
+  deferred stage 2) for closing that gap. Also flags a smaller, more
+  immediately actionable option: a direct unit test calling
+  `raop_handler_setup()` twice against a real `raop_conn_t`, which could
+  confirm/refute the new hypothesis above at unit-test cost without
+  waiting on the larger replay-mode investment.
+
+**One operational near-miss worth recording**: ran
+`tools/test-render-health-e2e.sh` while the manually-armed `-d`+`-capture`
+diagnostic process was live on the Pi waiting for the user's
+reproduction. That script's exit trap unconditionally runs `systemctl
+start uxplay.service`, which raced the armed process for the same
+AirPlay port -- it happened to lose the race and exit cleanly after 6s,
+so no actual harm, but it could as easily have won and disrupted the
+user's test. Won't run any live-Pi-touching script while a diagnostic
+capture is armed again (see memory:
+`no_live_scripts_during_armed_capture`).
+
+## 2026-09-13 (final): section 9's hypothesis confirmed and fixed; a further
+live reproduction still failed; built `-threadtest`, a real
+multi-threaded test framework -- disproved two hypotheses, bug still open
+
+A second live debug capture (no probes) confirmed section 9's orphaning
+hypothesis was **wrong**: 8 clean TEARDOWN+SETUP cycles, `"SETUP 1"` only
+once, the orphan-diagnostic marker never fired. The **real** mechanism:
+`audio_renderer_start()` (`renderers/audio_renderer.c`) only reset the
+pipeline's clock reference (`gst_audio_pipeline_base_time`) when the codec
+type *changed* -- a same-codec restart (every real track-switch cycle)
+took a branch that did nothing at all, leaving a stale clock reference in
+place while a brand-new RAOP audio thread started pushing fresh-session
+buffers into it. Confirmed directly: `audio_get_format()` ran 8 times,
+"start"/"changed audio connection" logged once.
+
+**Fixed** -- with one real mistake caught before it shipped anywhere
+live: the first draft also sent `gst_app_src_end_of_stream()` and cycled
+pipeline state on every restart (matching the "changed" branch) --
+`-replay`-verified against the real 8-cycle capture and found this
+**permanently breaks the appsrc** (EOS is not undone by cycling state;
+every subsequent push failed forever). Corrected to only refresh the
+clock reference; re-verified clean.
+
+**A further live reproduction (page refresh) against the corrected,
+checksum-verified fix still failed** ("audio still disappears"). Per
+explicit instruction to stop iterating against live hardware, built
+`-threadtest N` (`uxplay.cpp`) exactly per
+`docs/replay-real-threads-plan.md` section 3: a minimal synthetic AirPlay
+client (real FairPlay handshake reusing the existing `lib/fairplay.h`
+primitives, real bplist SETUP/TEARDOWN via libplist, real AES-CBC RTP
+audio using a genuine captured AAC-ELD frame) driving the actual
+`raop_init()`/httpd/`raop_handler_setup()`/`raop_rtp_thread_udp` over
+loopback -- no live client needed at all, runs standalone (audio-only, no
+Pi hardware) or on the Pi for real `alsasink`. Found and fixed one real
+pre-existing bug while building it: `lib/fairplay.h` was missing the
+`extern "C"` guard every other C header here has, breaking the link the
+moment C++ code called it directly.
+
+**Used it to directly disprove two hypotheses** (hard evidence, not
+absence-of-log-line inference): no orphaning across 8 rapid and 3
+realistically 25s-gapped cycles (with proper feedback keepalives so the
+server's own `-reset` didn't kill the test connection); and a
+"deferred-`g_idle_add()`-callback-loses-the-race" theory proposed after
+the live failure -- timing markers show the callback consistently
+completes in under 1ms, both timing profiles. **Did not reproduce the
+live symptom**: the amplitude probe never fired even on the real Pi's
+`alsasink`, but the test repeats one real captured frame rather than a
+genuine continuous stream, so this can't yet distinguish "decoder can't
+use synthetic content" from "the real bug drops it." Full detail:
+`bugs/2026-09-13-audio-dies-on-repeated-track-switch-setup.md` sections
+10-12, `docs/replay-real-threads-plan.md`'s "Results so far".
+
+**Where this leaves things**: the audio_renderer.c fix is real, confirmed,
+deployed, and not a regression -- but evidently not the complete
+explanation. Next candidates: feed `-threadtest` a genuine multi-frame
+real sequence instead of one repeated frame; extend it to drive
+mirror/video concurrently; or Pi-specific ALSA/HDMI behavior needing a
+human to actually listen, not just a probe.
+
+## 2026-09-13 (truly final): bug #10's real root cause found and CONFIRMED FIXED
+
+One more armed `-d`+`-capture` session (safe diagnostics only: the
+connection-lifecycle markers plus a new lightweight decode-buffer counter
+on the decoder's own output pad, no per-buffer content inspection) caught
+it directly: real decoded PCM (`DECODED-BUFFER-OUT`) stopped appearing
+after a restart while real RTP audio kept arriving from the client for
+thousands more lines -- the first time this exact signature was captured
+rather than inferred. Immediately after the last decoded buffer, the log
+showed `latency = -43835.110378` (~12.18 hours), self-corrected ~1.3s
+later by a real RTCP sync packet whose own log line
+(`offset change = -43834.940587`) confirmed the exact magnitude.
+
+**Root cause**: `raop_rtp_t`'s `initial_sync`/`rtp_sync`/
+`client_ntp_sync` (`lib/raop_rtp.c`) are set exactly once, in the
+one-time constructor, and never reset elsewhere. Since this session
+already established that `raop_rtp_t` correctly persists across every
+TEARDOWN+SETUP restart (not destroyed/recreated), this stale RTP-
+timestamp-to-NTP-time mapping persists too -- every restart after the
+first computes a nonsense absolute NTP time (a previous session's sync
+reference applied to a freshly-reset, unrelated RTP timestamp range)
+until the next periodic sync packet corrects it. That garbage value
+becomes the GStreamer PTS for every buffer in that window; once pushed to
+a `sync=true` ALSA sink, its playback-position tracking never recovers --
+every subsequent correctly-timed buffer looks "late" and gets silently
+dropped forever, with zero errors anywhere. Explains every symptom of
+this bug in every reproduction, exactly.
+
+**Fixed** (`lib/raop_rtp.c`, `raop_rtp_start_audio()`): reset all three
+fields to their "not yet synced" state on every (re)start, mirroring the
+constructor. No new locking needed -- the existing redundant-SETUP guard
+already guarantees the previous audio thread has fully exited before this
+runs. Makes the RTP layer correctly report "not synced yet" after a
+restart, which `audio_renderer_render_buffer()`'s existing (but,
+undiscovered until now, never actually triggered on a restart) re-base
+safety path already knows how to handle.
+
+**Confirmed**: deployed, checksum-verified, stress-tested by the user
+across 17 real restart cycles in one live session -- zero anomalies, zero
+errors, bug not reproducible afterward. Archived:
+`tools/captures/audio-fix-confirmed-20260913.cap`. Full trace:
+`bugs/2026-09-13-audio-dies-on-repeated-track-switch-setup.md` section 13,
+including an honest accounting of which of this investigation's several
+fixes were real-but-insufficient (section 10) vs the actual missing piece
+(this one). Nothing has been committed yet. Image not rebuilt/reflashed
+(card is in the Pi, not the Mac's reader) -- the live device is running
+this fix via SSH, but a fresh `make image` + reflash would be needed to
+ship it from a cold boot.
+
+## 2026-09-14: bug-fix-protocol corrected -- a standing test must never
+switch revisions itself
+
+`tools/test-audio-ntp-resync-e2e.sh`'s first draft built two binaries
+(current working tree + `lib/raop_rtp.c` from git HEAD via an internal
+`git show`/swap/rebuild/restore dance) and asserted old=fails/new=passes
+in one script run. Correctly called out: a standing test must test
+exactly one revision -- the one currently checked out -- and must never
+perform a checkout/revision switch itself (slow, mutates the working tree
+on every run, real risk of leaving it in the wrong state if interrupted).
+Rewritten: the script now only builds and checks the current working
+tree. The fail-on-prior-revision validation still happened -- as a
+one-time manual exercise (swap `lib/raop_rtp.c` to `git show HEAD`,
+rebuild, rerun the *same* unmodified script, confirm FAIL, restore,
+rebuild, confirm PASS again) -- proving the test has real discriminating
+power without that behavior living inside the test. `bug_fix_protocol`
+memory updated to state this as a hard rule for every future bug's test.
