@@ -1562,3 +1562,63 @@ Docker/`-threadtest`-style loopback driving, no Pi needed for any of it,
 but the final "does this actually fix what was heard" check needs a
 fresh `-d -capture` session once they're back. Full writeup:
 `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.
+
+## 2026-09-14 (later still): fix #1 deployed, user reported "no effect" --
+found the REAL root cause, fix #2, confirmed synthetically at last
+
+Pi came back online. Deployed the resend-rate-limit fix live via SSH.
+First snag: an orphaned `-d -capture` process from before the Pi went
+offline (never cleaned up) was still running, holding the mDNS
+registration -- the freshly-deployed service failed to start
+(`kDNSServiceErr_NameConflict`) until that stray process was killed;
+unrelated to the fix. Asked the user to test, they said "no effect" --
+before any capture was armed (a sequencing mistake: should have armed
+first). Re-armed properly this time, got a fresh capture.
+
+**The report was correct.** The fix was confirmed active (`~27` real
+resend requests vs the unfixed `~760`, ~30x fewer, exactly as designed)
+but the dropout was still ~2.8s, completely unchanged -- disproving the
+"flooding extends recovery" hypothesis directly: cutting request volume
+30x had zero effect on stall duration, so request volume was never the
+controlling variable.
+
+**Real root cause**, traced directly from the "no effect" capture:
+`raop_buffer_handle_resends` showed `first_seqnum` stuck for the entire
+~2.8s while `last_seqnum` climbed to exactly `first_seqnum + 256`
+(`RAOP_BUFFER_LENGTH`) before finally advancing.
+`raop_buffer_dequeue()`'s only forward-progress mechanism was capacity-
+based: force-skip a stuck packet once the buffer's full 256-entry
+capacity is exhausted -- completely independent of resend request rate.
+At AAC-ELD's real cadence (~10.9ms/packet), filling 256 entries takes
+~2.79s, matching the observed ~2.8s almost exactly. Git history explains
+why the buffer is 256 entries at all: upstream raised it from 32
+specifically to fix ALAC stuttering (`0263d55`, issue #526, after an
+earlier 32->960->32 back-and-forth, `b64ce6f`) -- so simply shrinking it
+back risked reintroducing that regression.
+
+**Fix #2**: a *time*-based force-skip in `raop_buffer_dequeue()`
+(`RAOP_STALL_TIMEOUT_NS`, 200ms), orthogonal to the existing capacity-
+based one -- once a slot has been stuck 200ms, skip it regardless of
+buffer capacity. `RAOP_BUFFER_LENGTH` itself unchanged, so the
+ALAC-stuttering fix stays intact; ordinary jitter/reordering resolves in
+single-digit-to-tens of ms, well under 200ms, so this shouldn't interact
+with normal-case behavior at all.
+
+**Verified**: corrected `-resendstormcheck`'s synthetic keepalive rate to
+match AAC-ELD's real ~10.9ms cadence first (an earlier arbitrary 5ms
+interval had under-predicted real-world stall duration by ~2x -- 1.27s
+synthetic vs ~2.8s real) -- confirmed this alone reproduces the real
+~2.8s number synthetically (2.72s measured) before touching any fix code,
+per the standing bug-fix protocol. Implemented fix #2, re-ran: ~0.10-0.11s
+across three consecutive runs, a ~27x improvement, comfortably under the
+0.5s requirement. Full regression suite re-run clean: `make unit-tests`,
+`tools/test-audio-ntp-resync-e2e.sh`, `tools/test-audio-reconnect-latency-e2e.sh`,
+`tools/test-audio-resend-storm-e2e.sh` (updated to assert the real
+recovery-time metric, not just request count). Full writeup:
+`docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.
+
+**Still not done**: real-hardware confirmation. Redeploying now; will not
+report success until a fresh live capture directly confirms the ~2.8s
+gaps are actually gone -- given fix #1's "verified synthetically, deployed,
+turned out insufficient" outcome earlier the same day, synthetic evidence
+alone is explicitly not being treated as sufficient this time.

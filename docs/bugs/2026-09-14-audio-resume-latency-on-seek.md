@@ -1,28 +1,52 @@
 # Audio resume latency on seek/scrub (target: <=0.5s, observed: up to 3s)
 
-Status: **FIXED (2026-09-14), pending real-hardware confirmation.** Root
-cause: `lib/raop_buffer.c`'s resend-request logic had no rate limiting at
-all — every ~5ms main-loop tick, for as long as an audio packet stayed
-missing, it fired a brand new duplicate resend request at the client,
-with no memory of having just asked. During the exact network-congestion
-window a seek itself creates (a large H.264 I-frame burst competing for
-the same WiFi), this flooded both directions of the control channel with
-hundreds of redundant resend-request/resend-response pairs and
-empirically took ~2.8 seconds to converge — three times in one
-~46-second session, zero RTSP signaling, video completely unaffected
-throughout. This was pristine, unmodified upstream (`FDH2/UxPlay`)
-behavior, not something this fork introduced. Fixed by rate-limiting
-repeat requests for the same gap to once per 100ms
-(`RAOP_RESEND_MIN_INTERVAL_NS`, `lib/raop_buffer.c`) — the *first*
-request for any gap is unaffected. Verified via a new synthetic driver
-mode (`-resendstormcheck`) that exercises this path directly, entirely in
-Docker: 200 duplicate requests/s before the fix, 10/s after, both
-numbers stable across repeated runs. **Not yet confirmed on real
-hardware** — the user is away from home; a fresh `-d -capture` session
-once they're back is needed to positively verify the actual ~2.8s
-dropouts stop happening, per this project's "verify visible outcome, not
-just mechanism" standing rule. See "Fix implemented" below for the full
-detail.
+Status: **Two fixes. The first was real but insufficient (deployed,
+confirmed via a real capture to have zero effect); the second (2026-09-14,
+same day) is the one that actually bounds the dropout duration — pending
+real-hardware confirmation after redeploying.**
+
+**Fix #1 — resend-request rate limiting** (`RAOP_RESEND_MIN_INTERVAL_NS`,
+`lib/raop_buffer.c`, 100ms): `lib/raop_buffer.c`'s resend-request logic
+had no rate limiting at all — every ~5ms main-loop tick, for as long as
+an audio packet stayed missing, it fired a brand new duplicate resend
+request at the client, with no memory of having just asked. Confirmed via
+a real capture: ~760 duplicate requests per ~2.8s real audio dropout.
+Deployed, then redeployed after a mistake (an orphaned diagnostic process
+left the mDNS registration held, causing the real service to fail to
+start — unrelated to the fix, fixed by killing the stray process).
+**The user tested it and reported "no effect".** A fresh capture with the
+fix active confirmed why: request volume *was* down (~27 requests vs the
+unfixed ~760, matching the fix's design), but the actual dropout was
+still ~2.8s, unchanged. The rate limit is real and worth keeping (less
+redundant control-channel traffic during an already-congested window),
+but it was never the actual bottleneck.
+
+**Fix #2 — stall-timeout force-skip** (`RAOP_STALL_TIMEOUT_NS`,
+`lib/raop_buffer.c`, 200ms) — **this is the one that matters**. Traced
+directly from the "no effect" capture: `raop_buffer_handle_resends` showed
+`first_seqnum` stuck for the entire ~2.8s window while `last_seqnum`
+climbed until it landed exactly on `first_seqnum + 256`
+(`RAOP_BUFFER_LENGTH`). `raop_buffer_dequeue()` only force-skips a stuck
+missing packet once the buffer's full 256-entry capacity is exhausted —
+completely independent of resend request rate. At AAC-ELD's real cadence
+(spf=480 @ 44100Hz ≈ 10.9ms/packet), filling 256 entries takes
+256 × 10.9ms ≈ 2.79s, matching the observed ~2.8s almost exactly. Fixed by
+adding a *time*-based force-skip, orthogonal to the existing capacity-based
+one: once a slot has been stuck for `RAOP_STALL_TIMEOUT_NS` (200ms), skip
+it regardless of buffer capacity. `RAOP_BUFFER_LENGTH` itself is
+unchanged (still 256) — upstream raised it there specifically to fix ALAC
+stuttering (issue #526), so shrinking it back risked reintroducing that;
+the time-based fix leaves ordinary jitter/reordering (resolves in
+single-digit-to-tens of ms) completely unaffected. Verified via the same
+`-resendstormcheck` driver, corrected to send its synthetic keepalive
+stream at AAC-ELD's real ~10.9ms cadence (an earlier, faster, arbitrary
+5ms interval had under-predicted the real-world stall by ~2x — 1.27s
+synthetic vs ~2.8s real): **~2.72s before this fix (matching the real
+capture almost exactly), ~0.10-0.11s after, three consecutive runs.**
+
+Both fixes are pristine-upstream-behavior-turned-fork-specific-fixes —
+neither existed as a defense in `FDH2/UxPlay` upstream. See "Fix
+implemented" sections below for full detail on each.
 
 The earlier TEARDOWN(96)+SETUP investigation below is still accurate on
 its own terms (that mechanism is real, but minor, and was not the
@@ -398,10 +422,53 @@ first counted request).
   the one thing every synthetic test here cannot substitute for, and
   isn't being glossed over as "done" until it happens.
 
+## Deployed, tested, "no effect" — the real second root cause
+
+Fix #1 was deployed live via SSH (checksum-verified) and the service
+restarted. A deployment sequencing mistake surfaced first: an orphaned
+`-d -capture` process from an earlier, interrupted session (the Pi went
+offline mid-session when the user left home) was still running and held
+the mDNS registration, causing the freshly-deployed service to fail to
+start (`kDNSServiceErr_NameConflict`) -- unrelated to the fix itself,
+fixed by killing the stray process.
+
+Asked the user to test; **they reported "no effect"** before a capture was
+armed -- a second sequencing mistake (should have armed the capture
+*first*). Re-armed, asked for one more repro, this time bracketing it
+properly (waited a real margin after "done" before stopping, learned from
+an earlier premature-stop mistake the same day).
+
+The fresh capture (`build/logs/resend-fix-verify-20260914.log`) confirmed
+the report: `raop_rtp audio: now = ...` timestamps show two real gaps,
+2.8197s and 2.8155s, plus a 1.4587s one. **Fix #1 was confirmed active**
+(`raop_buffer_handle_resends` fired ~762 times per gap as before, but only
+~27 real `raop_rtp got resend request` lines -- the rate limit working
+exactly as designed, ~30x fewer actual requests) -- **and the dropout
+duration was completely unchanged.** This directly disproved the
+"flooding extends recovery" hypothesis fix #1 was based on: cutting
+request volume 30x had zero effect on how long the stall lasted, meaning
+request volume was never the controlling variable.
+
+Tracing `first_seqnum`/`last_seqnum` through the `raop_buffer_handle_resends`
+log lines in this window found the real mechanism (fix #2, above):
+`first_seqnum` stayed at 35455 for the whole ~2.8s while `last_seqnum`
+climbed to exactly `35455 + 256`, at which point `first_seqnum` finally
+advanced (by one, then by one more) and the dropout ended. This is
+`raop_buffer_dequeue()`'s capacity-based force-skip, not a successful
+resend -- confirmed a stuck packet keeps getting resent (27 "resent audio
+packet: seqnum=35455" log lines) without ever being consumed until the
+buffer fills.
+
 ## Fixed in
 
-Main repo: `e4a84f6` (fix + docs + new test), `a1778ba` (submodule bump
-for the incidental `-mp4` fixes). UxPlay submodule: `5222900` (the fix
-itself + `-resendstormcheck`), `9b2fffa` (incidental `-mp4` mux-to-file
-fixes found while building a visualization), plus the
-`-resendrecoverycheck` driver mode (pending commit as of this write-up).
+**Fix #1 (resend-request rate limiting), deployed and found
+insufficient**: Main repo `e4a84f6` (fix + docs + new test), `a1778ba`
+(submodule bump for incidental `-mp4` fixes). UxPlay submodule `5222900`
+(the fix + `-resendstormcheck`), `9b2fffa` (incidental `-mp4` mux-to-file
+fixes found while building a visualization), `59c5dcc`
+(`-resendrecoverycheck`, later found to have modeled the wrong bottleneck
+-- see `docs/threadtest.md`'s correction note). Main repo `635d28f`
+(recovery-time verification writeup).
+
+**Fix #2 (stall-timeout force-skip), the one that actually matters**:
+pending commit as of this write-up.

@@ -100,7 +100,7 @@ own (no long-lived server loop). Driven by
 tree and asserts the RTP-timestamp-to-NTP-time sync state reset in
 `raop_rtp_start_audio()` behaves correctly (see `docs/audio-pipeline.md`).
 
-## `-resendstormcheck`: resend-request rate-limit regression check
+## `-resendstormcheck`: real ~2.8s dropout regression check
 
 ```
 uxplay -vs 0 -resendstormcheck
@@ -119,13 +119,29 @@ packet arriving on its control channel, not the SETUP body directly, so
 sending the sync packet from any other socket wouldn't work).
 
 Sends audio packets 0-4, then permanently skips seqnums 5-7 (never sent,
-to anyone), then keeps sending one packet roughly every 5ms for 1s while
-counting distinct resend-request packets (8 bytes, `packet[1] == 0xD5`)
-arriving back on its own socket. Prints `RESEND-REQUEST-COUNT <n> (in
-1.0s, sent <n> keepalive packets)`. Runs to completion and exits on its
-own. Driven by `tools/test-audio-resend-storm-e2e.sh`, which builds the
-current working tree and asserts the count stays under a threshold well
-below the unfixed 1:1 packet-to-request ratio — see
+to anyone), then keeps sending one packet every ~10.9ms (AAC-ELD's real
+cadence, spf=480 @ 44100Hz — **matters, not just for realism**: an
+earlier version used an arbitrary faster 5ms interval, which made
+`raop_buffer_dequeue()`'s 256-entry capacity threshold get reached in
+~1.27s instead of the real ~2.79s the actual cadence produces, under-
+predicting a real capture's observed dropout by ~2x) for 3.5s while
+tracking every resend-request packet (8 bytes, `packet[1] == 0xD5`)
+arriving back on its own socket. Prints two markers:
+- `RESEND-REQUEST-COUNT <n> (in 3.5s, sent <n> keepalive packets)` — how
+  much redundant control-channel traffic the request-rate-limit fix
+  avoids. Secondary signal.
+- `RESOLVED-AT <seconds>` — timestamp of the *last* resend-request
+  received, i.e. how long until the server stops asking (either a genuine
+  resend succeeded, or the stall-timeout force-skip gave up on it). **This
+  is the real recovery-time metric** — confirmed the hard way: the
+  request-rate-limit fix alone cut `RESEND-REQUEST-COUNT` ~30x on a real
+  capture with zero change to `RESOLVED-AT`'s real-world equivalent (the
+  actual ~2.8s dropout persisted after deploying that fix alone).
+
+Runs to completion and exits on its own. Driven by
+`tools/test-audio-resend-storm-e2e.sh`, which builds the current working
+tree and asserts both `RESOLVED-AT` (primary) and the count (secondary)
+stay under threshold — see
 `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.
 
 ## `-resendrecoverycheck`: end-to-end recovery-time comparison (no Pi/network needed)
@@ -157,6 +173,21 @@ resolves via a genuine clean resend in ~10ms on the first request. Not a
 literal prediction of "2.8s" -- a model demonstrating the mechanism
 (fewer redundant requests leaves the buffer nowhere near its overflow
 threshold), not a physical WiFi simulation.
+
+**Correction (found after deploying and getting a real "no effect"
+report)**: the buffer-capacity mechanism this model correctly identified
+turned out to be the real bottleneck -- but the conclusion drawn here at
+the time ("the fix" = the resend-request rate limit) was wrong. A real
+capture with the rate-limit fix deployed alone showed request volume down
+~30x with the actual ~2.8s dropout completely unchanged: fewer requests
+never made the *client's own audio stream* (which drives how fast the
+buffer's `last_seqnum` climbs, independent of how often the server asks
+for a resend) arrive any faster. The real fix is the stall-timeout
+force-skip in `raop_buffer_dequeue()` (`RAOP_STALL_TIMEOUT_NS`) -- see
+the "Resend requests and the stall-timeout force-skip" section of
+`docs/audio-pipeline.md` and `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.
+This section is kept as-is (not rewritten) as an honest record of the
+investigation path, including the wrong turn.
 
 ## `tools/test-audio-reconnect-latency-e2e.sh`: reconnect-latency regression guard
 

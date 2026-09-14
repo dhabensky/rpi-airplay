@@ -60,36 +60,73 @@ above this reset (`raop_rtp.c:670-687`) already guarantees the previous
 audio thread has fully exited and been joined before it runs, so no lock
 is needed around the reset itself.
 
-## Resend-request rate limiting
+## Resend requests and the stall-timeout force-skip
 
 `lib/raop_buffer.c` holds a strict in-order jitter buffer
 (`RAOP_BUFFER_LENGTH` = 256 entries): `raop_buffer_dequeue()`
-(`raop_buffer.c:229`) refuses to return anything past the first missing
+(`raop_buffer.c:284`) refuses to return anything past the first missing
 sequence number, correct for AAC-ELD's decode ordering requirement.
-`raop_buffer_handle_resends()` (`raop_buffer.c:294`) is called on every
+`raop_buffer_handle_resends()` (`raop_buffer.c`) is called on every
 iteration of the RAOP audio thread's `select()` loop that real socket
 activity wakes (its timeout branch does a bare `continue`, skipping this
 call entirely — `raop_rtp.c:421-441`) and asks the client to resend
 whatever's still missing at the front of the buffer, via
 `raop_rtp_resend_callback()` (`raop_rtp.c:199`).
 
-Rate limited (`RAOP_RESEND_MIN_INTERVAL_NS`, `raop_buffer.c`, 100ms) since
-2026-09-14: `raop_buffer->last_resend_first_seqnum`/
-`last_resend_request_ns` track the most recent request, and a call for
-the *same* still-missing `first_seqnum` within the interval is skipped —
-a genuinely new gap (a different `first_seqnum`) always fires
-immediately, unchanged from before this existed. Before this fix, the
-loop fired a brand-new duplicate resend request on literally every wake,
-with zero memory of having just asked — confirmed via a real capture
-showing ~760 duplicate requests and 1000-2800 resent-packet responses
-per ~2.8s real audio dropout on seek (the network congestion a seek's own
-large H.264 I-frame burst creates was enough to lose a handful of audio
-packets; flooding that same congested link with redundant control-channel
-traffic plausibly extended, not shortened, recovery time). See
-`docs/bugs/2026-09-14-audio-resume-latency-on-seek.md` for the full
-capture analysis, and `docs/threadtest.md`'s `-resendstormcheck` section
-for how this is regression-tested (`tools/test-audio-resend-storm-e2e.sh`)
-without needing real packet loss or Pi hardware.
+Two fixes here, from the same 2026-09-14 investigation, addressing two
+different things — worth keeping them straight, since deploying only the
+first was confirmed (via a real capture) to have **zero effect** on the
+actual reported symptom:
+
+1. **Resend-request rate limiting** (`RAOP_RESEND_MIN_INTERVAL_NS`,
+   100ms): `raop_buffer->last_resend_first_seqnum`/`last_resend_request_ns`
+   track the most recent request, and a call for the *same* still-missing
+   `first_seqnum` within the interval is skipped — a genuinely new gap (a
+   different `first_seqnum`) always fires immediately, unchanged from
+   before this existed. Before this fix, the loop fired a brand-new
+   duplicate resend request on literally every wake, with zero memory of
+   having just asked — confirmed via a real capture showing ~760
+   duplicate requests per ~2.8s real audio dropout. **Real, worth
+   keeping** (cuts redundant control-channel traffic during exactly the
+   window that's already congested, confirmed ~30x reduction on a second
+   real capture), **but does not bound how long a stall lasts** — that
+   capture also proved this directly: request volume down ~30x, dropout
+   duration completely unchanged.
+2. **Stall-timeout force-skip** (`RAOP_STALL_TIMEOUT_NS`, `raop_buffer.c`,
+   200ms) — the fix that actually matters for dropout duration.
+   `raop_buffer_dequeue()`'s only forward-progress mechanism, before this,
+   was capacity-based: if the slot at `first_seqnum` isn't filled, wait,
+   *unless* the buffer has filled all `RAOP_BUFFER_LENGTH` entries behind
+   it, in which case force-skip past it regardless. At AAC-ELD's real
+   cadence (spf=480 @ 44100Hz ≈ 10.9ms/packet), filling 256 entries takes
+   ~2.79s — independent of resend request rate, since it's driven purely
+   by how many *new* packets keep arriving behind the stuck one. This is
+   what a real capture's ~2.8s dropouts actually measured (confirmed:
+   `raop_buffer_handle_resends`' logged `first_seqnum`/`last_seqnum` pair
+   landed exactly on `first_seqnum + 256` at the moment each gap
+   resolved). Fix: track (`raop_buffer->stalled`/`stall_since_ns`) how
+   long the current `first_seqnum` slot has been stuck, and force-skip
+   once `RAOP_STALL_TIMEOUT_NS` elapses, *regardless* of buffer capacity
+   — orthogonal to, not a replacement for, the capacity-based path.
+   `RAOP_BUFFER_LENGTH` itself stays at 256: it was raised there by
+   upstream specifically to fix ALAC stuttering (`0263d55`, issue #526,
+   after an earlier 32→960→32 back-and-forth, `b64ce6f`), so shrinking it
+   back would risk reintroducing that regression; the time-based fix
+   leaves normal jitter/reordering (which resolves in single-digit-to-tens
+   of ms, well under 200ms) completely unaffected. `raop_buffer->stalled`
+   is deliberately *not* reset after each individual force-skip — only on
+   a genuine successful (filled) dequeue — so a multi-packet gap gets
+   skipped in one burst once the timeout is reached, not one 200ms wait
+   per missing packet.
+
+See `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md` for the full
+two-capture investigation (first fix deployed and found insufficient,
+second capture traced the real mechanism), and `docs/threadtest.md`'s
+`-resendstormcheck` section for how both are regression-tested
+(`tools/test-audio-resend-storm-e2e.sh`) without needing real packet loss
+or Pi hardware — including matching the synthetic keepalive rate to
+AAC-ELD's real cadence, which turned out to matter: an earlier, faster,
+arbitrary rate under-predicted the real-world stall duration by ~2x.
 
 ## GStreamer pipeline construction (per format)
 
