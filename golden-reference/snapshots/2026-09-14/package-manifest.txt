@@ -1,5 +1,4 @@
 adduser						install
-alsa-utils					install
 apt						install
 avahi-daemon					install
 base-files					install
@@ -78,7 +77,6 @@ libass9:arm64					install
 libassuan9:arm64				install
 libasyncns0:arm64				install
 libatomic1:arm64				install
-libatopology2t64:arm64				install
 libattr1:arm64					install
 libaudit-common					install
 libaudit1:arm64					install
@@ -136,9 +134,6 @@ libdeflate0:arm64				install
 libdevmapper1.02.1:arm64			install
 libdrm-amdgpu1:arm64				install
 libdrm-common					install
-libdrm-etnaviv1:arm64				install
-libdrm-tegra0:arm64				install
-libdrm-tests					install
 libdrm2:arm64					install
 libdvdnav4:arm64				install
 libdvdread8t64:arm64				install
@@ -151,7 +146,6 @@ libext2fs2t64:arm64				install
 libfdisk1:arm64					install
 libffi8:arm64					install
 libfftw3-double3:arm64				install
-libfftw3-single3:arm64				install
 libfido2-1:arm64				install
 libflac14:arm64					install
 libflite1:arm64					install
@@ -248,6 +242,7 @@ libpcsclite1:arm64				install
 libpgm-5.3-0t64:arm64				install
 libpixman-1-0:arm64				install
 libplacebo349:arm64				install
+libplist-2.0-4:arm64				install
 libpng16-16t64:arm64				install
 libpocketsphinx3:arm64				install
 libpopt0:arm64					install
