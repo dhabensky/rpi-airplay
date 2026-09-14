@@ -1,24 +1,22 @@
 #!/bin/bash
-# Autonomous regression test for a real class of bug (2026-09-12): the DRM
-# primary plane's backing buffer (/dev/fb0) getting re-dirtied by console
-# text SOMETIME during a real boot, well after zero-fb0 (uxplay.service's
-# ExecStartPre) already ran once, early. Whatever's on fb0 becomes visible
-# wherever nothing else covers the screen -- the TV's pillarbox margins for
-# non-16:9 content, and (since the 2026-09-12 frozen-frame-hide fix moves the
+# Autonomous regression test guarding against the DRM primary plane's
+# backing buffer (/dev/fb0) getting re-dirtied by console text SOMETIME
+# during a real boot, well after zero-fb0 (uxplay.service's ExecStartPre)
+# already ran once, early. Whatever's on fb0 becomes visible wherever
+# nothing else covers the screen -- the TV's pillarbox margins for
+# non-16:9 content, and (since video_renderer_hide_video() moves the
 # ENTIRE video plane off-screen on disconnect) the whole screen after
-# mirroring stops. Caught for real on a freshly-flashed device: a `-replay`-
-# based test can't catch this at all, since -replay never goes through a real
-# boot -- this needs the actual kernel cmdline / systemd boot sequence, so
-# this test reboots the real device. Root cause and fix: see PROGRESS.md's
-# 2026-09-12 "console=tty1 removed from cmdline.txt" entry.
+# mirroring stops. A `-replay`-based test can't catch this at all, since
+# -replay never goes through a real boot -- this needs the actual kernel
+# cmdline / systemd boot sequence, so this test reboots the real device.
 #
 # Usage: tools/test-fb0-stays-black-e2e.sh [user@host] [settle_s]
 #   settle_s: extra time to wait after uxplay.service is confirmed active,
 #   before checking fb0 -- this is the whole point of the test (catching
 #   console text that arrives AFTER the service is already up), so don't
-#   shrink it without a real reason. Default matches the worst case actually
-#   observed this session (console cursor / late boot messages settled well
-#   before the 2-minute mark on a Pi 3B+).
+#   shrink it without a real reason. Default is generous relative to how
+#   long console cursor / late boot messages take to settle on a Pi 3B+
+#   (well before the 2-minute mark).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -86,9 +84,8 @@ echo "  $FB0_DIFF"
 if echo "$FB0_DIFF" | grep -q "^/dev/fb0 /dev/zero differ"; then
   echo
   echo "=== RESULT: FAIL -- /dev/fb0 has non-zero content well after boot ==="
-  echo "This is the exact bug class from 2026-09-12: whatever's on fb0 shows"
-  echo "through the TV's pillarbox margins and the whole screen after a"
-  echo "disconnect. Pull a copy and look at it:"
+  echo "Whatever's on fb0 shows through the TV's pillarbox margins and the"
+  echo "whole screen after a disconnect. Pull a copy and look at it:"
   echo "  sshpass -p $SSH_PASS scp ${SSH_OPTS[*]} $TARGET:/dev/fb0 build/fb0-fail.raw"
   echo "  ffmpeg -f rawvideo -pixel_format rgb565le -video_size 1920x1080 \\"
   echo "    -i build/fb0-fail.raw -frames:v 1 build/fb0-fail.png"

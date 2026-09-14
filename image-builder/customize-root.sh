@@ -202,9 +202,6 @@ install -m 0755 "$uxplay_bin" "$work/usr/local/bin/uxplay_debug"
 echo "==> Installing image-builder/files/ content (systemd unit, udev rule, modules-load, uxrun, zero-fb0)"
 cp -a "$provfiles/etc/." "$work/etc/"
 install -m 0755 "$provfiles/usr/local/bin/uxrun" "$work/usr/local/bin/uxrun"
-# zero-fb0: 2026-09-12 fix, was previously only ever deployed ad hoc over SSH,
-# never actually added here -- a fresh image build would have silently
-# shipped without it.
 install -m 0755 "$provfiles/usr/local/bin/zero-fb0" "$work/usr/local/bin/zero-fb0"
 
 if [ -n "$personal_env" ] && [ -f "$personal_env" ]; then
@@ -216,8 +213,7 @@ if [ -n "$personal_env" ] && [ -f "$personal_env" ]; then
 # Pixels to inset the rendered picture on each edge, compensating for this
 # TV's own overscan/zoom cropping the outer edges of the HDMI signal.
 # Applied live -- edit and save, no restart or reconnect needed (uxplay
-# watches this file). Baked in at image-build time from personal.env; see
-# PROGRESS.md's 2026-09-12 entry for how to measure your own TV's crop.
+# watches this file). Baked in at image-build time from personal.env.
 UXPLAY_OVERSCAN_LEFT=${OVERSCAN_LEFT:-0}
 UXPLAY_OVERSCAN_RIGHT=${OVERSCAN_RIGHT:-0}
 UXPLAY_OVERSCAN_TOP=${OVERSCAN_TOP:-0}
@@ -249,12 +245,11 @@ mkdir -p "$work/etc/systemd/system/multi-user.target.wants"
 ln -sf /etc/systemd/system/uxplay.service \
   "$work/etc/systemd/system/multi-user.target.wants/uxplay.service"
 
-echo "==> Enabling dietpi-skip-firstrun.service (2026-09-12 fix -- without this,"
-echo "    every interactive SSH login on a real boot synchronously runs the"
-echo "    real dietpi-update/dietpi-software, since dietpi-firstboot.bash"
-echo "    resets .install_stage to 0 on every real hardware boot regardless"
-echo "    of what's baked into the image at build time; see PROGRESS.md's"
-echo "    2026-09-12 entry for the full trace)"
+echo "==> Enabling dietpi-skip-firstrun.service (without this, every"
+echo "    interactive SSH login on a real boot synchronously runs the real"
+echo "    dietpi-update/dietpi-software, since dietpi-firstboot.bash resets"
+echo "    .install_stage to 0 on every real hardware boot regardless of"
+echo "    what's baked into the image at build time)"
 ln -sf /etc/systemd/system/dietpi-skip-firstrun.service \
   "$work/etc/systemd/system/multi-user.target.wants/dietpi-skip-firstrun.service"
 

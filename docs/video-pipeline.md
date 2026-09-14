@@ -1,11 +1,9 @@
 # Video pipeline: threading and state machine
 
-Status: reference document, split out 2026-09-13 from the original
-combined `video-audio-threading-and-state-machine.md` (see
-`docs/README.md` for the full set, including `docs/audio-pipeline.md` and
-`docs/framebuffers-and-drm-planes.md`). All facts cited to `file:line` in
-the `UxPlay` submodule, re-checked while writing, not recalled from
-memory.
+Status: reference document (see `docs/README.md` for the full set,
+including `docs/audio-pipeline.md` and `docs/framebuffers-and-drm-
+planes.md`). All facts cited to `file:line` in the `UxPlay` submodule,
+verified against the code, not recalled from memory.
 
 This is a **description of what exists**, not a proposal. Where the
 architecture is fragile or actively racy, that's called out explicitly in
@@ -18,7 +16,7 @@ architecture is fragile or actively racy, that's called out explicitly in
 | **Main thread** | (process start) | Runs `main()`'s `reconnect:` loop: calls `main_loop()` (blocks in `g_main_loop_run()`), and on return, conditionally does the full pipeline destroy+rebuild (`uxplay.cpp:3667-3700`). All `GMainLoop` timeout/idle/bus-watch callbacks registered inside `main_loop()` also run here. |
 | **httpd thread** | `httpd.c:699`, once, for the process lifetime | The **only** thread that runs `httpd_thread()` (`httpd.c:360`) — a single `select()`-based event loop handling **every** RTSP/HTTP request serially. For video, its relevant duty is the TEARDOWN handler (`raop_handlers.h:1298`/`1314`) calling `video_reset()`. (Its audio-side duties are documented in `docs/audio-pipeline.md`.) |
 | **RAOP mirror thread** | `raop_rtp_mirror.c:932`, once per mirror session | Runs `raop_rtp_mirror_thread()` — reads incoming video RTP/H264 data, decrypts, calls `video_set_codec()` (→ `video_renderer_choose_codec()`, `raop_rtp_mirror.c:638,717`) and `video_process()` (→ `video_renderer_render_buffer()`, `uxplay.cpp:2725`). |
-| **video-blank thread** (`g_blank_display_thread`) | `video_renderer.c:1200`, ad hoc, joined before the next pipeline init (`video_renderer.c:991-994`) | Legacy "throwaway videotestsrc pipeline" blanking mechanism (`video_renderer.c:965-1042`), used by `video_renderer_destroy()`'s blanking call on a **full** reconnect/teardown. Not used by the 2026-09-12 `video_renderer_hide_video()` (a different, newer mechanism — see below). |
+| **video-blank thread** (`g_blank_display_thread`) | `video_renderer.c:1200`, ad hoc, joined before the next pipeline init (`video_renderer.c:991-994`) | "Throwaway videotestsrc pipeline" blanking mechanism (`video_renderer.c:965-1042`), used by `video_renderer_destroy()`'s blanking call on a **full** reconnect/teardown. A separate mechanism from `video_renderer_hide_video()` (see below). |
 
 Plus, **not a named thread in this codebase but real**: every GStreamer
 element that does async work runs its own internal thread(s) managed by
@@ -83,9 +81,9 @@ the flags above and the transitions they gate.
    choose_codec() |  PLAYING                   | <---------------------+
    restores rect  |  (renderer published,      |                       |
    here (no       |   frames rendering)        |                       |
-   expose since   +----------------------------+                       |
-   2026-09-13,          |                  |                           |
-   see bugs/)           |                  |                           |
+   expose, see    +----------------------------+                       |
+   bugs/)               |                  |                           |
+                         |                  |                           |
                          |                  | RTP_SHUTDOWN (plain       |
                          |                  | disconnect/reconnect/     |
                          |                  | seek-renegotiation --     |
@@ -99,8 +97,7 @@ the flags above and the transitions they gate.
                          |    |   pipeline still alive and  |           |
                          |    |   decoding, render-rectangle|           |
                          |    |   pushed off-screen via     |           |
-                         |    |   video_renderer_hide_video,|           |
-                         |    |   2026-09-12)                |          |
+                         |    |   video_renderer_hide_video)|           |
                          |    +----------------------------+           |
                          |                  |                          |
                          |                  | next connection's        |
@@ -126,17 +123,14 @@ the flags above and the transitions they gate.
 
 Two structurally different "the client went away" paths exist and are
 **not the same mechanism**:
-- **Fast path** (`skip_video_rebuild=true`): pipeline is kept alive
-  (load-bearing for re-mirror — an earlier attempt to always tear down
-  broke re-mirroring entirely, see submodule history `1992e08`). Since
-  2026-09-12, visually hidden via `video_renderer_hide_video()` instead of
-  showing a frozen frame.
+- **Fast path** (`skip_video_rebuild=true`): pipeline is kept alive —
+  load-bearing for re-mirror, since tearing it down instead breaks
+  re-mirroring entirely. Visually hidden via `video_renderer_hide_video()`
+  rather than showing a frozen frame.
 - **Slow/eventual path** (`feedback_callback`'s `-reset N` timeout, default
   60s): full `video_renderer_destroy()` + throwaway-blank-pipeline +
-  `video_renderer_init()` + `video_renderer_start()`. This is the *only*
-  path that existed for blanking before 2026-09-12's fix, and is why that
-  fix's own commit message describes the prior state as "not
-  instantaneous."
+  `video_renderer_init()` + `video_renderer_start()` — the only path that
+  does a full pipeline teardown for blanking, hence "slow."
 
 Which path fires for a given "the client seems to have gone" event is
 decided independently by two unrelated triggers running on two different

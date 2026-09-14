@@ -34,10 +34,7 @@ git lfs env >/dev/null 2>&1 || { echo "ERROR: git-lfs not initialized (git lfs i
 # mktemp location ($TMPDIR, typically /var/folders/.../T on macOS, or
 # plain /tmp): colima's default config only mounts $HOME into its VM, so a
 # bind-mount of a /tmp path silently shows up as an empty directory inside
-# the container (verified empirically -- not a chroot/execute-bit issue as
-# an earlier, now-corrected comment in customize-root.sh claimed; the real
-# cause is this mount-scope gap, hit here via a completely different
-# symptom: a version-extraction step silently reading nothing).
+# the container.
 mkdir -p build/.tmp
 work=$(mktemp -d build/.tmp/refresh-base.XXXXXX)
 trap 'rm -rf "$work"' EXIT

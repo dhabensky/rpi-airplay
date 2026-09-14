@@ -1,9 +1,8 @@
 # One shared, disposable build/test/tool environment for this whole
-# project -- previously 5 separate Dockerfile.* files (uxplay-buildtest,
-# unit-tests, image-builder, gstreamer-closure, drmdump-buildtest), each
-# producing its own image even though all 5 pinned the identical Debian
-# base digest and had no conflicting package requirements. This is the
-# union of everything all of them needed.
+# project: uxplay-buildtest, unit-tests, image-builder, gstreamer-closure,
+# and drmdump-buildtest all need the identical Debian base digest, and
+# their package requirements don't conflict, so one image covers all of
+# them -- this is the union of everything they need.
 #
 # This image only ever contains TOOLING, never a baked-in build action or
 # copied-in application source -- every actual build/test/compute step
@@ -26,13 +25,10 @@ FROM debian@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc
 # No `apt-get update` here: it would query whatever Debian currently
 # publishes, and the exact byte content of everything this image computes
 # from these packages (e.g. build/vendor-gstreamer/, from the gstreamer-
-# plugins-* below) can drift between otherwise-identical runs whenever a
-# Dockerfile change busts the layer cache and forces a fresh install --
-# same drift class fixed in image-builder/customize-root.sh, just for the
-# build tooling instead of the shipped Pi image. Install directly against
-# the frozen index captured once by `make refresh-buildenv-apt-lists` into
-# apt-lists/ -- re-run that (deliberately, when packages should actually
-# move) instead of ever calling `apt-get update` again here.
+# plugins-* below) would then depend on exactly when the image happens to
+# be built, not just on what's in this file. Install directly against the
+# frozen index in apt-lists/ (regenerated deliberately via `make
+# refresh-buildenv-apt-lists` when packages should actually move) instead.
 COPY apt-lists/ /var/lib/apt/lists/
 RUN apt-get -o Acquire::Check-Valid-Until=false install -y --no-install-recommends \
     git cmake build-essential pkg-config \

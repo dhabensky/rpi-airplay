@@ -1,12 +1,14 @@
 # Comparison against pristine upstream (FDH2/UxPlay tag v1.73.7)
 
-Status: written 2026-09-13. Compares the current baseline (submodule
-`d2731a6`, the reverted, regression-tested state — see `PROGRESS.md`'s
-2026-09-13 entry) against pristine upstream `FDH2/UxPlay` tag `v1.73.7`,
-which is the exact same commit as `df67c21` ("prepations for 1.73.7") —
-confirmed via `git merge-base --is-ancestor` and an empty
-`git log df67c21..v1.73.7`. Command used throughout:
-`git diff df67c21 d2731a6 -- <path>`, run from inside `UxPlay/`.
+Status: **stale — pinned to submodule commit `d2731a6`; the submodule
+has since moved well past it (11 files, 862+ lines changed) and this
+comparison has not been regenerated.** Treat the specifics below as
+historical until re-run. Compares `d2731a6` against pristine upstream
+`FDH2/UxPlay` tag `v1.73.7`, which is the exact same commit as `df67c21`
+("prepations for 1.73.7") — confirmed via `git merge-base
+--is-ancestor` and an empty `git log df67c21..v1.73.7`. Command used
+throughout: `git diff df67c21 d2731a6 -- <path>`, run from inside
+`UxPlay/`.
 
 Overall: `12 files changed, 983 insertions(+), 40 deletions(-)`. Every
 file is discussed below; nothing was skipped.
@@ -26,7 +28,7 @@ logger_log(raop->logger, LOGGER_INFO, "New AirPlay connection: stopping RAOP aud
 raop_rtp_stop(raop_rtp);
 ```
 
-Added in submodule commit `268e168` (2026-09-11), while investigating the
+Added in submodule commit `268e168`, while investigating the
 "redundant SETUP reports port 0" bug below. **This baseline's behavior has
 since diverged further from upstream**: `conn_request()` now calls
 `raop_should_teardown_existing_connection()` (`lib/raop_conn_policy.h`)

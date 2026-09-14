@@ -83,12 +83,10 @@ fi
 
 echo
 echo "=== config.txt / dietpi.txt content assertions ==="
-# Every one of these was a real, previously-invisible bug found only by an
-# actual flash+boot+photographed-console-screen cycle -- config.txt/
-# dietpi.txt live on the boot partition, which no other local test mounts
-# at all (nspawn's -D mode only ever sees the root filesystem). Asserted
-# here, statically, so a regression fails in seconds, not after a full
-# card round-trip.
+# config.txt/dietpi.txt live on the boot partition, which no other local
+# test mounts at all (nspawn's -D mode only ever sees the root
+# filesystem). Asserted here, statically, so a regression fails in
+# seconds, not after a full card round-trip.
 assert_line() {
   local file="$1" pattern="$2" desc="$3"
   if grep -qx "$pattern" "$file"; then

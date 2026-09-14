@@ -60,14 +60,10 @@ if [ "${1:-}" = "--in-container" ]; then
 
   echo
   echo "=== TIER B (boot partition, minus known macOS-mount junk) ==="
-  # Previously never checked at all -- config.txt/cmdline.txt/dietpi.txt
-  # customizations that were only ever hand-applied on the live Pi (never
-  # scripted) went completely unnoticed here for the whole project until
-  # caught by an actual real-hardware boot. golden's own boot manifest
-  # includes .Spotlight-V100/.fseventsd/etc. from an earlier Mac-mount of
-  # this same card (see README's flashing section) -- filtered inline here
-  # rather than folding boot-partition paths into EXCLUDE-LIST.md's
-  # root-partition-scoped, absolute-path format.
+  # golden's own boot manifest includes .Spotlight-V100/.fseventsd/etc.
+  # from a Mac-mount of the same card (see README's flashing section) --
+  # filtered inline here rather than folding boot-partition paths into
+  # EXCLUDE-LIST.md's root-partition-scoped, absolute-path format.
   ( cd "$work/boot" && find . -type f \
       -not -path './.Spotlight-V100/*' -not -path './.fseventsd/*' \
       -not -path './.Trashes/*' -not -name '.DS_Store' -not -name '._*' \

@@ -6,15 +6,13 @@
 #
 # Dockerfile installs its own tooling packages (cmake, the gstreamer-
 # plugins-* used to compute the vendored GStreamer closure, etc.) against
-# this frozen index instead of calling `apt-get update` itself. Without
-# this, `docker build` queries whatever Debian currently publishes on
-# every cache-busting rebuild, and the exact byte content of vendored
-# files computed from those packages (build/vendor-gstreamer/) can drift
-# between otherwise-identical runs -- caught live via `make verify`'s
-# Tier B after a Dockerfile change forced a rebuild (see PROGRESS.md's
-# 2026-09-14 entry). Same fix as image-builder/refresh-apt-lists.sh, for
-# a different apt source: this one captures the plain Debian base image's
-# own sources.list, not the customized DietPi rootfs's.
+# this frozen index instead of calling `apt-get update` itself, so the
+# exact byte content of anything computed from those packages
+# (build/vendor-gstreamer/) stays fixed across rebuilds regardless of
+# when Docker happens to invalidate its layer cache. Captures the plain
+# Debian base image's own sources.list -- a different apt source than
+# image-builder/apt-lists/, which captures the customized DietPi
+# rootfs's.
 #
 # Requires: Docker. Does NOT commit -- review and commit apt-lists/
 # explicitly.

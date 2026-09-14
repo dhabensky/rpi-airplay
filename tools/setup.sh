@@ -104,19 +104,19 @@ install -d -o uxplay -g uxplay -m 0755 /home/uxplay
 echo "==> Installing the systemd unit"
 install -m 0644 ../image-builder/files/etc/systemd/system/uxplay.service /etc/systemd/system/uxplay.service
 
-echo "==> Installing the DietPi first-run-wizard skip (2026-09-12 fix -- without"
-echo "    this, every interactive SSH login synchronously runs the real"
-echo "    dietpi-update/dietpi-software, since dietpi-firstboot.bash resets"
-echo "    .install_stage to 0 on every real hardware boot regardless of what's"
-echo "    baked into the image; see PROGRESS.md's 2026-09-12 entry)"
+echo "==> Installing the DietPi first-run-wizard skip (without this, every"
+echo "    interactive SSH login synchronously runs the real dietpi-update/"
+echo "    dietpi-software, since dietpi-firstboot.bash resets .install_stage"
+echo "    to 0 on every real hardware boot regardless of what's baked into"
+echo "    the image)"
 install -m 0644 ../image-builder/files/etc/systemd/system/dietpi-skip-firstrun.service /etc/systemd/system/dietpi-skip-firstrun.service
 systemctl daemon-reload
 systemctl enable --now dietpi-skip-firstrun.service
 
 echo "==> Installing the overscan config (only if not already present -- this"
-echo "    file is meant to be hand-tuned live on a running device, see"
-echo "    PROGRESS.md's 2026-09-12 entry; re-running this script must not"
-echo "    clobber someone's already-tuned values back to all-zero)"
+echo "    file is meant to be hand-tuned live on a running device; re-running"
+echo "    this script must not clobber someone's already-tuned values back"
+echo "    to all-zero)"
 if [ ! -f /etc/default/uxplay ]; then
   install -d /etc/default
   install -m 0644 ../image-builder/files/etc/default/uxplay /etc/default/uxplay
@@ -126,10 +126,7 @@ systemctl enable uxplay.service
 echo "==> Installing the uxrun A/V-sync tuning helper"
 install -m 0755 ../image-builder/files/usr/local/bin/uxrun /usr/local/bin/uxrun
 
-echo "==> Installing the fbcon-blanking ExecStartPre helper (2026-09-12 fix --"
-echo "    was previously only ever deployed ad hoc over SSH, never actually"
-echo "    added here, so a fresh run of this script would have silently"
-echo "    shipped without it)"
+echo "==> Installing the fbcon-blanking ExecStartPre helper"
 install -m 0755 ../image-builder/files/usr/local/bin/zero-fb0 /usr/local/bin/zero-fb0
 
 cat <<'EOF'

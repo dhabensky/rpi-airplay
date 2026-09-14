@@ -1,16 +1,15 @@
 #!/bin/bash
 # Autonomous regression test against REAL captured AirPlay sessions -- no Mac,
-# no live client, no user interaction. Exists because of a real bug (2026-09-11,
-# see PROGRESS.md) that only reproduced with a real client's actual traffic:
-# kmssink's decoded-frame render rate collapsed to ~1.3fps for a specific
-# client's non-native-resolution content, while a 90s *synthetic* ffmpeg
-# capture rendered perfectly the whole time -- synthetic content didn't carry
-# whatever real macOS AirPlay encoding characteristic triggered it. Real
-# `-capture` recordings in tools/captures/ (gitignored, kept locally -- see
-# that dir) are the only thing that reliably reproduces this class of bug, so
-# this test replays every one of them and asserts a healthy render/decode
-# ratio, instead of asking a human to re-mirror their screen for every future
-# kmssink/v4l2h264dec pipeline change.
+# no live client, no user interaction. Synthetic content (e.g. a plain
+# ffmpeg-generated capture) is not a substitute: real macOS AirPlay encoding
+# characteristics for specific client/content combinations can trigger
+# render-path bugs (e.g. kmssink's decoded-frame render rate collapsing for
+# certain non-native-resolution content) that synthetic captures never
+# reproduce. Real `-capture` recordings in tools/captures/ (gitignored, kept
+# locally -- see that dir) are the only reliable way to catch this class of
+# bug, so this test replays every one of them and asserts a healthy
+# render/decode ratio, instead of asking a human to re-mirror their screen
+# for every future kmssink/v4l2h264dec pipeline change.
 #
 # Usage: tools/test-render-health-e2e.sh [user@host] [min_ratio_pct]
 #   Replays every tools/captures/*.cap file found. A capture with essentially
@@ -36,8 +35,8 @@ shopt -s nullglob
 CAPTURES=(tools/captures/*.cap)
 if [ ${#CAPTURES[@]} -eq 0 ]; then
   echo "No captures found in tools/captures/ -- nothing to test."
-  echo "See PROGRESS.md's 'Methodology note' (2026-09-11 entry) for how to add one:"
-  echo "  enable -capture on the live service, get a real session, save the .cap here."
+  echo "To add one: enable -capture on the live service, get a real session,"
+  echo "  save the .cap here."
   exit 0
 fi
 

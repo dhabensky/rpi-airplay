@@ -5,11 +5,9 @@
 # of each carrying its own copy of the same docker invocation.
 #
 # UxPlay/ is bind-mounted read-only and copied to a container-local path
-# before building -- keeps the host's submodule checkout untouched (no
-# stray build/ dir appearing inside a tracked git submodule) and matches
-# exactly the path (/src/UxPlay) the old Dockerfile.uxplay-buildtest's
-# COPY + WORKDIR used, so -ffile-prefix-map keeps stripping the same
-# absolute path string.
+# (/src/UxPlay) before building -- keeps the host's submodule checkout
+# untouched (no stray build/ dir appearing inside a tracked git submodule)
+# and gives -ffile-prefix-map a fixed absolute path to strip.
 #
 # SOURCE_DATE_EPOCH + -ffile-prefix-map make the build reproducible:
 # without them, embedded timestamps and the /src/UxPlay absolute build

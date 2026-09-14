@@ -1,12 +1,10 @@
 #!/bin/bash
 # Customizes the extracted boot (FAT32) partition directory: applies the
-# config.txt/cmdline.txt tuning that was previously only ever done by hand,
-# directly on the live Pi, and never captured into any script here --
-# invisible to every `make verify` run so far because tools/compare-rebuild.sh's
-# Tier B only ever diffed the ROOT partition, never boot (fixed alongside
-# this). Confirmed against golden-reference/snapshots/*/config/boot-config.txt
-# (a verbatim capture of the live Pi's actual file) -- these are the only
-# 4 lines that differ from the pristine base image's own config.txt/cmdline.txt.
+# config.txt/cmdline.txt tuning this deployment needs. tools/compare-
+# rebuild.sh's Tier B diffs this partition against
+# golden-reference/snapshots/*/config/boot-config.txt (a verbatim capture
+# of the live Pi's actual file) to confirm these are the only lines that
+# differ from the pristine base image's own config.txt/cmdline.txt.
 #
 # Usage: image-builder/customize-boot.sh <boot-dir> [personal-env-file]
 set -euo pipefail
@@ -43,34 +41,33 @@ sed -i \
   -e 's/$/ vc4.force_hotplug=1/' \
   "$bootdir/cmdline.txt"
 
-echo "==> Removing 'console=tty1' from cmdline.txt (2026-09-12 fix -- the base"
-echo "    image ships BOTH a serial console (kept above) and tty1/fbcon as"
-echo "    active kernel consoles. Every line the kernel/systemd print during"
-echo "    boot gets rendered by fbcon onto the framebuffer's actual backing"
-echo "    memory (/dev/fb0), which the DRM primary plane scans out whenever"
-echo "    nothing else covers it -- confirmed via a real fb0 dump on a freshly"
-echo "    flashed device, well after boot, still showing a frozen snapshot of"
-echo "    late boot messages (up through 'Started uxplay.service' and later"
-echo "    targets). zero-fb0 (ExecStartPre for uxplay.service) only runs ONCE,"
-echo "    early -- it can't protect against console text that arrives after it"
-echo "    runs, and systemd keeps printing for a while past that point on"
-echo "    every real boot. This is why: (a) the TV's pillarbox margins for"
-echo "    non-16:9 content showed boot text instead of black, and (b) the"
-echo "    2026-09-12 frozen-frame-hide fix, which moves the ENTIRE video"
-echo "    plane off-screen on disconnect, exposed the WHOLE frozen boot-log"
-echo "    snapshot instead of a black screen. Root-cause fix: stop the kernel"
-echo "    from ever drawing to the framebuffer at all, rather than trying to"
-echo "    win a timing race re-zeroing it afterwards -- zero-fb0 is kept as"
-echo "    defense in depth, but shouldn't be relied on alone."
+echo "==> Removing 'console=tty1' from cmdline.txt (the base image ships BOTH"
+echo "    a serial console (kept above) and tty1/fbcon as active kernel"
+echo "    consoles. Every line the kernel/systemd print during boot gets"
+echo "    rendered by fbcon onto the framebuffer's actual backing memory"
+echo "    (/dev/fb0), which the DRM primary plane scans out whenever nothing"
+echo "    else covers it -- confirmed via a real fb0 dump on a freshly"
+echo "    flashed device, well after boot, still showing a frozen snapshot"
+echo "    of late boot messages. zero-fb0 (ExecStartPre for uxplay.service)"
+echo "    only runs ONCE, early -- it can't protect against console text"
+echo "    that arrives after it runs, and systemd keeps printing for a while"
+echo "    past that point on every real boot. This is why: (a) the TV's"
+echo "    pillarbox margins for non-16:9 content would show boot text"
+echo "    instead of black, and (b) video_renderer_hide_video(), which moves"
+echo "    the ENTIRE video plane off-screen on disconnect, would expose the"
+echo "    WHOLE frozen boot-log snapshot instead of a black screen. Root"
+echo "    cause fix: stop the kernel from ever drawing to the framebuffer at"
+echo "    all, rather than trying to win a timing race re-zeroing it"
+echo "    afterwards -- zero-fb0 is kept as defense in depth, but shouldn't"
+echo "    be relied on alone."
 sed -i 's/ console=tty1//' "$bootdir/cmdline.txt"
 
-echo "==> Adding vt.global_cursor_default=0 (2026-09-12 fix, same investigation"
-echo "    as above) -- removing console=tty1 stops the kernel/systemd from"
-echo "    ever PRINTING text to the framebuffer, but fbcon still draws its own"
-echo "    blinking VT cursor there regardless of whether anything is routed to"
-echo "    that console -- confirmed as the one remaining artifact (a single"
-echo "    character-sized blinking cursor, top-left corner) after the fix"
-echo "    above on its own."
+echo "==> Adding vt.global_cursor_default=0 (removing console=tty1 stops the"
+echo "    kernel/systemd from ever PRINTING text to the framebuffer, but"
+echo "    fbcon still draws its own blinking VT cursor there regardless of"
+echo "    whether anything is routed to that console -- the one remaining"
+echo "    artifact, a single character-sized blinking cursor in the"
+echo "    top-left corner, without this)"
 sed -i 's/$/ vt.global_cursor_default=0/' "$bootdir/cmdline.txt"
 
 echo "==> Enabling DietPi's automated WiFi setup (dietpi.txt ships with it OFF"
@@ -82,8 +79,7 @@ echo "    at all, no matter what's in dietpi-wifi.txt."
 sed -i 's/^AUTO_SETUP_NET_WIFI_ENABLED=.*/AUTO_SETUP_NET_WIFI_ENABLED=1/' "$bootdir/dietpi.txt"
 
 echo "==> Setting hostname to rpi-airplay (base image ships the generic"
-echo "    'DietPi' default; the live Pi has always been rpi-airplay,"
-echo "    hand-set at some undocumented point, never previously scripted)"
+echo "    'DietPi' default)"
 sed -i 's/^AUTO_SETUP_NET_HOSTNAME=.*/AUTO_SETUP_NET_HOSTNAME=rpi-airplay/' "$bootdir/dietpi.txt"
 
 echo "==> Making first boot fully non-interactive and self-contained -- this"

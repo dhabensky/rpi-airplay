@@ -85,10 +85,9 @@ surviving seeks — does.
   Mac needs simultaneous internet access)
 - ALSA HDMI audio device: `hw:vc4hdmi,0` (single HDMI port on the 3B+)
 - **Power supply matters**: an underpowered PSU causes ARM throttling
-  (`vcgencmd get_throttled` != `0x0`) which was previously misdiagnosed
-  as a decode/software performance bug. Always check
-  `vcgencmd get_throttled` / `measure_clock arm` first for any
-  performance issue.
+  (`vcgencmd get_throttled` != `0x0`), easily mistaken for a decode/
+  software performance bug. Always check `vcgencmd get_throttled` /
+  `measure_clock arm` first for any performance issue.
 
 ## Building the uxplay_debug binary
 
@@ -254,15 +253,12 @@ A/V sync).
    version of each package in its live index, so a pinned version (or,
    for the Dockerfile, anything resolved fresh) can vanish the moment
    upstream ships a point/security release, breaking the build for
-   reasons that have nothing to do with an intentional change here; for
-   the Dockerfile specifically, this was caught live via `make verify`'s
-   Tier B after a Dockerfile edit busted Docker's layer cache and pulled
-   a different `libgstallocators-1.0.so.0` into `build/vendor-
-   gstreamer/` (see `PROGRESS.md`'s 2026-09-14 entry). `apt-packages.lock`
-   and `image-builder/apt-lists/` must be regenerated together (see that
-   file's header); the Dockerfile's `apt-lists/` has no separate lock
-   file — freezing the index alone is sufficient there, since a fresh
-   container with no prior state resolves a fixed index deterministically.
+   reasons that have nothing to do with an intentional change here.
+   `apt-packages.lock` and `image-builder/apt-lists/` must be
+   regenerated together (see that file's header); the Dockerfile's
+   `apt-lists/` has no separate lock file — freezing the index alone is
+   sufficient there, since a fresh container with no prior state
+   resolves a fixed index deterministically.
    Residual gap either way: this only freezes the *index* — the actual
    `.deb` bytes still come from the live network on a cache miss, and
    `archive.raspberrypi.com`/`dietpi.com/apt` (unlike Debian's own
