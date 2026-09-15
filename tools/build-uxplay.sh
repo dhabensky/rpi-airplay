@@ -16,18 +16,34 @@
 # it's a function of the pinned source, not of when the build happened to
 # run.
 #
-# Usage: tools/build-uxplay.sh <output-path>
+# Usage: tools/build-uxplay.sh <output-path> [source-dir]
+#   source-dir defaults to ./UxPlay. Pass an alternate checkout (e.g. a
+#   `git worktree` of a different ref, see tools/pytest/conftest.py's
+#   uxplay_binary fixture) to build that ref instead, without touching
+#   the main submodule checkout.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-out="${1:?usage: $0 <output-path>}"
+out="${1:?usage: $0 <output-path> [source-dir]}"
+src="${2:-$PWD/UxPlay}"
 mkdir -p "$(dirname "$out")"
+# Docker's bind-mount creates the host path as a DIRECTORY if it doesn't
+# already exist -- fine on a repeat build (the previous run's file is
+# already there), silently wrong on a genuinely fresh output path (the
+# container's own `cp` then lands inside that directory instead of at the
+# path itself). touch+chmod first so the mount always targets a real,
+# executable file -- `cp` writing into an already-existing destination
+# inode (that's what the bind mount is) doesn't change its permission
+# bits, so a plain `touch` alone would leave it non-executable.
+touch "$out"
+chmod +x "$out"
 out_abs="$(cd "$(dirname "$out")" && pwd)/$(basename "$out")"
+src_abs="$(cd "$src" && pwd)"
 
 docker build -q -t rpi-airplay-buildenv -f Dockerfile .
 
 docker run --rm \
-  -v "$PWD/UxPlay":/mnt/UxPlay-src:ro \
+  -v "$src_abs":/mnt/UxPlay-src:ro \
   -v "$out_abs":/out/uxplay_debug \
   -e SOURCE_DATE_EPOCH=1788797385 \
   rpi-airplay-buildenv \

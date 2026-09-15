@@ -1714,3 +1714,72 @@ as the full-length originals before switching the default).
 
 Full investigation, the rejected `-bt709` data, and the micro-glitch
 disambiguation: `docs/bugs/2026-09-14-video-render-collapse.md`.
+
+## 2026-09-15: rewrote the e2e test suite in pytest, with Perfetto traces
+
+Preparing to upstream this fork's fixes -- needed clear, inspectable
+evidence for reviewers instead of "trust me, a bash script printed
+PASS". Rewrote all 7 `tools/test-*-e2e.sh` scripts as `tools/pytest/`
+modules (same underlying mechanisms -- Docker `-threadtest`/
+`-ntpresynccheck`/`-resendstormcheck` drivers, real-Pi `-replay`/reboot
+checks -- just converted to pytest, since ad-hoc bash-plus-inline-Python
+heredocs don't compose or report well at 7+ scripts). Each test still
+targets exactly one binary per run; `--uxplay-ref <git-ref>` (via a
+throwaway `git worktree`, cached per ref) builds a specific commit
+instead of the current working tree, so demonstrating a bug and its fix
+is "run the suite twice" -- once against the parent-of-fix commit (real
+failures expected), once against current HEAD (PASS expected) -- rather
+than a one-time manual step nobody repeats.
+
+Every test writes a Perfetto trace (Chrome Trace Format JSON, no new
+dependency -- `json.dump` from the stdlib, not the protobuf format,
+which would need the `perfetto` package for nothing these tests
+actually use) built from the same timestamped marker lines each test
+already parses to make its assertion. Opens at ui.perfetto.dev; a
+render-collapse shows as a counter track's "decoded" line climbing while
+"rendered" flatlines, directly instead of a printed ratio.
+
+Found and fixed two real bugs while building this:
+- `tools/build-uxplay.sh`: Docker creates a bind-mount target as a
+  DIRECTORY when the host path doesn't already exist as a file -- never
+  triggered before (`build/uxplay_debug` always already existed from an
+  earlier build), hit immediately by `--uxplay-ref`'s fresh
+  `build/uxplay-refs/<ref>/uxplay_debug` paths. Fixed with `touch
+  "$out"; chmod +x "$out"` before the docker run (a plain `touch` alone
+  left the file non-executable, since `cp` writing into an
+  already-existing destination inode doesn't change its permission
+  bits -- found by hitting that too, right after the first fix).
+- `docker_runner`'s scp fixture initially failed with a host-key
+  mismatch -- unrelated to the new code, a leftover from the day's many
+  Pi reboots/reflashes (each one regenerates SSH host keys); `ssh-keygen
+  -R` and moved on.
+
+Tried to demonstrate the resend-storm fix (`c768aba`'s parent,
+`59c5dcc`) as the first end-to-end proof and hit a real limitation: at
+that commit the `-resendstormcheck` driver's own log format/window
+differs from the current one in ways unrelated to the actual
+`RAOP_STALL_TIMEOUT_NS` fix (a 1.0s window instead of 3.5s, no
+`RESOLVED-AT` line yet) -- the diagnostic instrumentation and the fix
+were apparently added in the same commit, so there's no clean "same
+test, different binary" boundary for this specific bug. Confirmed the
+render-health/resolution-change-gap tests have an even more fundamental
+limitation: `-replay` bypasses the real RTSP/network layer entirely, and
+the actual render-collapse race (docs/bugs/2026-09-14-video-render-
+collapse.md) needs that layer's real timing -- `--uxplay-ref c768aba`
+(before the render-health watchdog) against every capture still PASSES,
+confirmed directly, not assumed. Documented both limitations honestly in
+each test module's own docstring rather than papering over them.
+`test_ntp_resync.py`/`test_reconnect_latency.py`/`test_resend_storm.py`
+(the Docker-only, synthetic-driver tests) don't have this problem --
+they don't depend on real-time network delivery at all.
+
+All 17 tests pass against current HEAD (9m49s full suite,
+`tools/pytest/.venv/bin/pytest tools/pytest/ -v`). Old bash scripts
+deleted; `docs/testing.md`, `docs/threadtest.md`,
+`docs/audio-pipeline.md`, `docs/upstream-comparison.md`,
+`tools/captures/README.md`, `tools/make-synthetic-cap.py`,
+`tools/trim-capture.py`, and a stale comment in `UxPlay/uxplay.cpp`
+(commit `f6a5c0d`) updated to point at the new modules. `docs/bugs/*.md`
+and this file's own earlier entries deliberately left referencing the
+old script names -- historical record of what was actually run at the
+time, not something to revise after the fact.

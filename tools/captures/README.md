@@ -12,10 +12,10 @@ than one-off session dumps:
 - `resolution-change-gap-repro.cap` (372KB, ~1s) -- the earliest possible
   trim that still reliably triggers `v4l2h264dec`'s "Received resolution
   change" renegotiation every real session goes through early on.
-  Consumed by `tools/test-resolution-change-gap-e2e.sh`.
+  Consumed by `tools/pytest/test_resolution_change_gap.py`.
 - `trimmed/*.cap` (10s each, ~50MB total) -- one per full-length capture
   ever gathered here, trimmed to their first 10s. Consumed by
-  `tools/test-render-health-e2e.sh` by default (set
+  `tools/pytest/test_render_health.py` by default (set
   `CAPTURES_DIR=tools/captures` to use the full-length originals
   instead).
 
@@ -37,7 +37,8 @@ flag), reproduce a real AirPlay mirroring session against whatever
 content is relevant, copy the resulting file here (stays gitignored),
 then regenerate its trim: `tools/trim-capture.py <file>.cap
 trimmed/<name>-10s.cap 10`. Useful specifically for bugs that only
-reproduce with real client traffic (see `test-render-health-e2e.sh`'s own
-header comment for a concrete example: a real client's non-native-
-resolution content triggered a render-rate collapse that no synthetic
-capture ever reproduced).
+reproduce with real client traffic (see
+`tools/pytest/test_render_health.py`'s own module docstring for a
+concrete example: a real client's non-native-resolution content
+triggered a render-rate collapse that no synthetic capture ever
+reproduced).

@@ -12,7 +12,7 @@
 # automation and the private AVOutputContext/AVOutputDeviceMenuController
 # APIs). This synthesizes a valid, decodable .cap purely from any H.264
 # elementary stream (e.g. one generated locally by ffmpeg), letting
-# tools/test-reconnect-e2e.sh exercise the real reconnect code path
+# tools/pytest/test_video_reconnect.py exercise the real reconnect code path
 # (UX_RECONNECT_MODE=real) on real Pi hardware fully autonomously.
 #
 # Usage: make-synthetic-cap.py <in.h264> <out.cap> [fps]

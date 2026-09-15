@@ -60,7 +60,7 @@ uxplay -vs 0 -threadtest N
 6. Prints `SEND-SETUP`/`RECV-SETUP-response`/`SENT-SYNC`/
    `FIRST-AUDIO-PACKET`/`SEND-TEARDOWN`/`RECV-TEARDOWN-response`, each with
    a `tt_now()` timestamp and cycle number — used by
-   `tools/test-audio-reconnect-latency-e2e.sh` (see below) to measure
+   `tools/pytest/test_reconnect_latency.py` (see below) to measure
    reconnect latency precisely.
 
 ## Known limitation
@@ -78,7 +78,7 @@ never even reaches `gst_app_src_push_buffer()`, let alone the decoder —
 driver's traffic. `RENDER-BUFFER-CALL` (logged earlier in the same
 function, before the validity check) is the reliable marker for "the RAOP
 audio thread dequeued and handed off a synced packet" with this driver;
-`tools/test-audio-reconnect-latency-e2e.sh` uses it for exactly this
+`tools/pytest/test_reconnect_latency.py` uses it for exactly this
 reason. Diagnosing genuine decode failures needs a longer/varied real
 captured sequence fed frame-by-frame instead.
 
@@ -96,7 +96,7 @@ audio packet. Prints `SENT-PROBE-A`/`SENT-SYNC-2`/`SENT-PROBE-B` markers
 and relies on `RENDER-BUFFER-CALL` (`renderers/audio_renderer.c`,
 `UX_THREADTEST_DIAG`) for the rest. Runs to completion and exits on its
 own (no long-lived server loop). Driven by
-`tools/test-audio-ntp-resync-e2e.sh`, which builds the current working
+`tools/pytest/test_ntp_resync.py`, which builds the current working
 tree and asserts the RTP-timestamp-to-NTP-time sync state reset in
 `raop_rtp_start_audio()` behaves correctly (see `docs/audio-pipeline.md`).
 
@@ -139,7 +139,7 @@ arriving back on its own socket. Prints two markers:
   actual ~2.8s dropout persisted after deploying that fix alone).
 
 Runs to completion and exits on its own. Driven by
-`tools/test-audio-resend-storm-e2e.sh`, which builds the current working
+`tools/pytest/test_resend_storm.py`, which builds the current working
 tree and asserts both `RESOLVED-AT` (primary) and the count (secondary)
 stay under threshold — see
 `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.
@@ -189,7 +189,7 @@ the "Resend requests and the stall-timeout force-skip" section of
 This section is kept as-is (not rewritten) as an honest record of the
 investigation path, including the wrong turn.
 
-## `tools/test-audio-reconnect-latency-e2e.sh`: reconnect-latency regression guard
+## `tools/pytest/test_reconnect_latency.py`: reconnect-latency regression guard
 
 Drives plain `-threadtest N` (not a separate mode) and measures, per cycle,
 `SEND-TEARDOWN` -> the next cycle's first `RENDER-BUFFER-CALL` — the full

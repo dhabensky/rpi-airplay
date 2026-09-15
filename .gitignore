@@ -11,7 +11,7 @@ build/
 # Exceptions: small, purpose-built regression fixtures ARE committed --
 # tools/captures/resolution-change-gap-repro.cap (a 1s trim, see
 # tools/trim-capture.py) and tools/captures/trimmed/*.cap (10s trims of
-# the full local corpus, consumed by tools/test-render-health-e2e.sh).
+# the full local corpus, consumed by tools/pytest/test_render_health.py).
 # Both are generic enough to be meaningful without the original session's
 # full-length capture, small enough to commit as regular blobs (see
 # image-builder/vendored-debs/ for the project's own precedent on that
@@ -41,3 +41,9 @@ golden-reference/sdcard-backups/
 # present, entirely optional otherwise. See personal.env.example for the
 # format. Never commit real values.
 /personal.env
+
+# tools/pytest/'s project-local venv (tools/pytest-setup.sh) and bytecode
+# cache -- rebuildable, machine-specific, not source.
+tools/pytest/.venv/
+__pycache__/
+.pytest_cache/

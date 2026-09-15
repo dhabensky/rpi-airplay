@@ -173,7 +173,7 @@ built, none of it part of the production request-handling path:
 - `-capture`/`-replay` (`cap_write`, `replay_run`, `replay_do_reconnect`,
   `extract_sps_pps`, SPS/PPS re-priming for a simulated reconnect) —
   gated behind `-capture`/`-replay` flags. What makes
-  `tools/test-reconnect-e2e.sh` and `tools/test-render-health-e2e.sh`
+  `tools/pytest/test_video_reconnect.py` and `tools/pytest/test_render_health.py`
   possible at all; upstream has no equivalent.
 - `-threadtest`/`-ntpresynccheck` (`tt_now`, `tt_rtsp_request`,
   `tt_plist_to_bytes`, `tt_send_audio_packet`, `tt_send_sync_packet`,
@@ -182,7 +182,7 @@ built, none of it part of the production request-handling path:
   `conn_request()`/`raop_handler_setup()`/`raop_rtp_thread_udp` over
   loopback, including a real FairPlay handshake computed offline via
   `lib/fairplay.h`'s functions directly. See `docs/threadtest.md`. Used
-  by `tools/test-audio-ntp-resync-e2e.sh` to verify the `raop_rtp.c` fix
+  by `tools/pytest/test_ntp_resync.py` to verify the `raop_rtp.c` fix
   above.
 
 Production-path additions:

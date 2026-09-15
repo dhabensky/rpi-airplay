@@ -123,7 +123,7 @@ See `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md` for the full
 two-capture investigation (first fix deployed and found insufficient,
 second capture traced the real mechanism), and `docs/threadtest.md`'s
 `-resendstormcheck` section for how both are regression-tested
-(`tools/test-audio-resend-storm-e2e.sh`) without needing real packet loss
+(`tools/pytest/test_resend_storm.py`) without needing real packet loss
 or Pi hardware — including matching the synthetic keepalive rate to
 AAC-ELD's real cadence, which turned out to matter: an earlier, faster,
 arbitrary rate under-predicted the real-world stall duration by ~2x.

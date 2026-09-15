@@ -15,7 +15,7 @@ events (initial codec negotiation, the resolution-change renegotiation
 every session goes through, an early resend storm, ...) happen within the
 first few seconds -- there's rarely a reason to replay a multi-hundred-MB,
 multi-minute capture just to exercise them. See
-tools/test-resolution-change-gap-e2e.sh for an example consumer.
+tools/pytest/test_resolution_change_gap.py for an example consumer.
 
 Usage: tools/trim-capture.py <src.cap> <dst.cap> <seconds>
 """
