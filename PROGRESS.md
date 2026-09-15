@@ -1664,3 +1664,53 @@ re-diagnose the same non-bug from scratch.
 Both fixes committed and pushed (main repo `b87ce20`, UxPlay submodule
 `c768aba`, plus this closeout). Bug fully resolved. Full writeup:
 `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.
+
+## 2026-09-15: video freezes on first frame, forever (real client, non-native resolution)
+
+First live AirPlay session ever run against a freshly-flashed card:
+video froze on the first frame, forever. Audio kept working fine. Root-
+caused via a properly-armed `-capture` session (a permissions mistake on
+the first attempt silently dropped the recording -- capture dir was
+root-owned, the unprivileged `uxplay` user couldn't write to it) plus
+`GST_DEBUG=kmssink:6,v4l2videodec:5`: a real client mirroring at a non-
+native resolution (1662x1080) triggers a spurious, colorimetry-only
+"resolution change" event from `v4l2h264dec` a few frames in, and the
+resulting `kmssink` renegotiation sometimes desyncs decode from render --
+decoding keeps working with zero errors, but rendering just stops.
+
+Fix: a render-health watchdog (UxPlay submodule `01f871c`) -- two
+buffer-count probes (decoder src pad, sink sink pad), checked every
+second; 3 consecutive seconds of decode-without-render forces the same
+full pipeline relaunch the existing client-silence `-reset N` path
+already uses, instead of waiting up to 60s (or never, since audio alone
+doesn't trip that path). Confirmed live, twice, on a freshly-flashed
+card: forever-freeze gone both times.
+
+A candidate root-cause mitigation, `-bt709` (forces H.264 colorimetry to
+a constant value, preventing the renegotiation trigger), looked like it
+helped after one clean live session -- then got disproven by a
+reproducible test built specifically to check it
+(`tools/test-resolution-change-gap-e2e.sh`): no consistent improvement
+across multiple real captures, if anything slightly worse on a couple.
+Not shipped. One live session "feeling better" is not evidence; this
+project's own standing rule about live-testing bias, reconfirmed.
+
+A user-reported "regression" (a brief micro-glitch during the one normal
+resolution-change renegotiation every session goes through) turned out
+to be pre-existing, un-caused-by-this-fix behavior -- confirmed by
+deliberately restoring the exact original pre-watchdog binary+config and
+reproducing the identical glitch live, then again via the reproducible
+test on unmodified code. Not a regression, just never precisely measured
+before.
+
+Built two reusable, committed regression fixtures along the way:
+`tools/trim-capture.py` (trims any `-capture` file to its first N
+seconds at a record boundary -- the format has no header/index, so this
+is always safe) plus a 1s resolution-change-gap fixture (372KB, was a
+39MB source capture, ~14s round trip, was ~90s) and 10s trims of the
+whole local capture corpus for `tools/test-render-health-e2e.sh` (~50MB
+total, was ~527MB; spot-checked to measure the same render/decode ratios
+as the full-length originals before switching the default).
+
+Full investigation, the rejected `-bt709` data, and the micro-glitch
+disambiguation: `docs/bugs/2026-09-14-video-render-collapse.md`.

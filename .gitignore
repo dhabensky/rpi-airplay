@@ -7,7 +7,19 @@ build/
 # debugging session, not for the repo (can be multi-MB to multi-GB). Not
 # just a build/ subset: tools/captures/ (kept locally, not git-tracked)
 # also holds these.
+#
+# Exceptions: small, purpose-built regression fixtures ARE committed --
+# tools/captures/resolution-change-gap-repro.cap (a 1s trim, see
+# tools/trim-capture.py) and tools/captures/trimmed/*.cap (10s trims of
+# the full local corpus, consumed by tools/test-render-health-e2e.sh).
+# Both are generic enough to be meaningful without the original session's
+# full-length capture, small enough to commit as regular blobs (see
+# image-builder/vendored-debs/ for the project's own precedent on that
+# size threshold), and required for those tests to run at all outside
+# this machine.
 *.cap
+!tools/captures/resolution-change-gap-repro.cap
+!tools/captures/trimmed/*.cap
 *.h264
 planes.txt
 

@@ -11,15 +11,28 @@
 # render/decode ratio, instead of asking a human to re-mirror their screen
 # for every future kmssink/v4l2h264dec pipeline change.
 #
+# Replays tools/captures/trimmed/*.cap by default -- each is the first 10s
+# of the matching full capture (tools/trim-capture.py; regenerate via
+# `for f in tools/captures/*.cap; do tools/trim-capture.py "$f"
+# tools/captures/trimmed/"$(basename "$f" .cap)-10s.cap" 10; done`, run
+# whenever a capture in tools/captures/ is added/updated). Spot-checked
+# against the full-length captures before this was made the default: same
+# render/decode ratios (healthy stays healthy), ~10x less data, no loss of
+# real-client encoding characteristics since AirPlay's negotiation and any
+# render-path anomaly both happen well inside the first 10s of a session --
+# there's nothing a multi-minute capture catches that its first 10s doesn't.
+# Set CAPTURES_DIR=tools/captures to run the full-length originals instead.
+#
 # Usage: tools/test-render-health-e2e.sh [user@host] [min_ratio_pct]
-#   Replays every tools/captures/*.cap file found. A capture with essentially
-#   no video (audio-only debugging sessions, etc.) is skipped automatically
-#   (near-zero decode events -> nothing meaningful to assert).
+#   Replays every *.cap file found in CAPTURES_DIR. A capture with
+#   essentially no video (audio-only debugging sessions, etc.) is skipped
+#   automatically (near-zero decode events -> nothing meaningful to assert).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 TARGET="${1:-root@192.168.1.34}"
 MIN_RATIO="${2:-70}"   # percent: render_events / decode_events must be >= this
+CAPTURES_DIR="${CAPTURES_DIR:-tools/captures/trimmed}"
 
 # Password auth, no key set up on this device (see PROGRESS.md's "Useful
 # one-off diagnostic commands"). PubkeyAuthentication=no forces password
@@ -32,11 +45,11 @@ scp_to() { sshpass -p "$SSH_PASS" scp -o StrictHostKeyChecking=accept-new "$1" "
 scp_from() { sshpass -p "$SSH_PASS" scp -o StrictHostKeyChecking=accept-new "$TARGET:$1" "$2"; }
 
 shopt -s nullglob
-CAPTURES=(tools/captures/*.cap)
+CAPTURES=("$CAPTURES_DIR"/*.cap)
 if [ ${#CAPTURES[@]} -eq 0 ]; then
-  echo "No captures found in tools/captures/ -- nothing to test."
+  echo "No captures found in $CAPTURES_DIR -- nothing to test."
   echo "To add one: enable -capture on the live service, get a real session,"
-  echo "  save the .cap here."
+  echo "  save the .cap in tools/captures/, then trim it (see header above)."
   exit 0
 fi
 
@@ -54,7 +67,7 @@ for cap in "${CAPTURES[@]}"; do
 
   echo "==> Replaying with GST_DEBUG render/decode instrumentation"
   ssh_r "
-    GST_DEBUG=kmssink:6,v4l2videodec:5 timeout 90 stdbuf -oL -eL /usr/local/bin/uxplay_debug \
+    GST_DEBUG=kmssink:6,v4l2videodec:5 timeout 30 stdbuf -oL -eL /usr/local/bin/uxplay_debug \
       -nohold -vd v4l2h264dec -vc identity -srgb no -n 'Living Room TV' -reset 60 \
       -vs 'kmssink qos=false ts-offset=300000000' \
       -as 'alsasink device=plughw:vc4hdmi,0' \
