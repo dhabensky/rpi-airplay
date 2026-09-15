@@ -1164,3 +1164,45 @@ completed with exit code 0 -- direct proof that the full 229-package
 install (202 via the frozen snapshot.debian.org index + matching
 sources.list, 27 via local vendored-debs/) needs none of the three
 original hosts reachable at all.
+
+## 2026-09-15T07:36:01Z
+- golden-reference snapshot: `golden-reference/snapshots/2026-09-14/`
+- built image: `build/rpi-airplay.img` (7dbbb00c9c29...)
+- UxPlay submodule commit: `01f871c`
+```
+debugfs 1.47.2 (1-Jan-2025)
+Extracted boot partition -> /tmp/compare-work/boot (422 files)
+Extracted root partition -> /tmp/compare-work/root (13291 files)
+=== TIER A: package manifest ===
+PASS: package selections identical
+
+=== TIER B: file-tree content (root partition, minus EXCLUDE-LIST.md) ===
+DIFF: 14 files differ in content on shared paths (see build/compare/tierb-mismatches.txt)
+  (golden-only paths: 16, candidate-only paths: 3 -- expected for routine
+   package version bumps; see REBUILD-STATUS.md accepted-delta notes, not auto-failed here)
+
+=== TIER B (boot partition, minus known macOS-mount junk) ===
+PASS: all 422 shared boot files match content
+  (golden-only paths: 0, candidate-only paths: 0)
+
+=== TIER C: binary-exact (uxplay_debug + vendor GStreamer) ===
+DIFF: uxplay_debug differs (golden=f7145b5ac591d7fbcf8b9a358c7fbb67197a3c2dc2fcda8b3f66d87b9fdd69e7 candidate=a911b3a38b649b8f71466f6cde409331cb2dd0a65f3bbbda666ada3ee177e9b5) --
+  expected ONLY if the UxPlay submodule commit changed since the golden capture;
+  a mismatch against a build of the SAME commit is a real reproducibility bug.
+PASS: all vendored GStreamer files match exactly
+
+=== TIER D: functional smoke test ===
+BLOCKED: no spare SD card/Pi available for a real flash+boot+AirPlay test (see plan).
+
+=== TIER E: raw disk bit-diff ===
+N/A by design: the .img is the deliverable, not a byte-diff target (see plan's reframing).
+```
+
+This run followed the render-health watchdog fix (UxPlay submodule
+`c768aba` -> `01f871c`, docs/bugs/2026-09-14-video-render-collapse.md).
+Tier B's 14 deltas are all already-documented accepted-delta categories:
+the 13 from the previous run plus `./etc/shadow-` (the shadow backup
+file -- already covered by the existing "host-identity files" category,
+just hadn't happened to differ in a prior run's build ordering).
+`uxplay_debug` differing is expected and intentional here: this run's
+whole point was to ship the new submodule commit.
