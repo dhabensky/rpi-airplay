@@ -1874,3 +1874,43 @@ status/deletion-candidate summary are that work. Noted but not fixed:
 submodule commit `f009ad9`" -- genuinely stale now that the fork's own
 history was rewritten, but regenerating its full file-by-file diff
 audit against the new base is a separate, sizable task, not done here.
+
+## 2026-09-16 (later): the 4 Pi-dependent reports finished, one real finding
+
+Pi back up in the evening as planned. Ran all 4 remaining before/after
+comparisons for real on `dhabensky-clean`, not by recycling the earlier
+session's `dhabensky-dev`-era claims:
+
+- `test_render_health.py`/`test_resolution_change_gap.py`: re-confirmed,
+  fresh, that the structural `-replay` limitation (can't reach the
+  real-time layer the render-collapse race lives in) holds on this
+  branch too -- all 10 real captures pass identically at both the
+  pre-watchdog and post-watchdog commit.
+- `test_fb0_stays_black.py`: real reboot of the real device (~39s
+  downtime), fb0 confirmed genuinely zeroed after a real boot
+  (`cmp /dev/fb0 /dev/zero`, no "differ" anywhere in its output).
+- `test_video_reconnect.py`: this one didn't go as expected, and that
+  turned into the actual finding. Chose `37c9406`/`29d18d0` (a real,
+  adjacent regression/fix pair in history) as before/after -- both
+  PASSED. Investigated instead of assuming the test was broken: the
+  reconnect-simulation code prints `skip_video_rebuild=<value>` on
+  completion, and at `37c9406` it's 0 -- traced back to an *earlier*,
+  unrelated commit (`aa55d16`, fixing a completely different bug) that
+  had already deleted the only `skip_video_rebuild = true;` assignment
+  in the file. So at `37c9406`, the fast reconnect path the whole
+  DRM-master-race saga is about is permanently dead code; the "before"
+  run silently took the slow full-rebuild path instead and passed for an
+  unrelated reason. Real, useful finding -- the test mechanism is sound
+  (real hardware, real production code path), but this specific commit
+  pair doesn't prove what it was chosen to prove. Flagged as a rework
+  candidate (needs bisecting further back, before `aa55d16`) rather than
+  papered over.
+
+All 7 `tools/pytest/reports/*.md` now complete, `reports/README.md`
+updated with final status. This closes out the 4-point feedback from
+earlier today: driver code extracted to a real separate process (zero
+test-only flags left in `uxplay.cpp`), clean curated history on
+`dhabensky-clean` (no synthetic reverts needed anywhere), a real report
+per test with genuine before/after evidence where that concept applies
+and an honest explanation where it doesn't, and every test's usefulness
+either confirmed or specifically, concretely flagged -- not vaguely.
