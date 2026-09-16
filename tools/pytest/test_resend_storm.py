@@ -1,13 +1,14 @@
 """Regression test for the real ~2.8s audio dropout on a lost packet
-(docs/bugs/2026-09-14-audio-resume-latency-on-seek.md). Runs the scripted
-`-resendstormcheck` driver (uxplay.cpp), which opts into the real
-resend-wait path, creates a permanent 3-packet gap, and keeps sending one
-audio packet at AAC-ELD's real cadence (~10.9ms) for 3.5s.
+(docs/bugs/2026-09-14-audio-resume-latency-on-seek.md). Runs
+tools/synthetic-client.cpp's `resendstorm` mode -- a genuinely separate
+process from the unmodified uxplay_debug under test -- which opts into
+the real resend-wait path, creates a permanent 3-packet gap, and keeps
+sending one audio packet at AAC-ELD's real cadence (~10.9ms) for 3.5s.
 
 To see the bug this guards against: `pytest test_resend_storm.py
---uxplay-ref 59c5dcc` (the commit right before the actual fix, c768aba,
-in the UxPlay submodule) -- expect a real FAIL, and the trace's "resend"
-track keeps firing while "resolution" never does.
+--uxplay-ref 74a143e` (dhabensky-clean's commit right before the actual
+fix, 80d1004) -- expect a real FAIL, and the trace's "resend" track
+keeps firing while "resolution" never does.
 """
 from __future__ import annotations
 
@@ -17,10 +18,11 @@ RESOLVED_THRESHOLD_S = 0.3  # comfortable margin over the observed ~0.10-0.11s f
 COUNT_THRESHOLD = 30
 
 
-def test_resend_storm_resolves_quickly(docker_runner, trace_dir):
+def test_resend_storm_resolves_quickly(two_process_runner, trace_dir):
     from perfetto_trace import Trace
 
-    log = docker_runner.run(["-vs", "0", "-resendstormcheck"], timeout_s=6.0)
+    server_log, client_log = two_process_runner.run("resendstorm", client_timeout_s=6.0)
+    log = server_log + client_log
 
     m_count = re.search(r"RESEND-REQUEST-COUNT (\d+) \(in ([\d.]+)s, sent (\d+) keepalive packets\)", log)
     m_resolved = re.search(r"RESOLVED-AT (-?[\d.]+)", log)

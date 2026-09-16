@@ -1,15 +1,16 @@
 """Measures server-side audio TEARDOWN(96)+SETUP(96) reconnect latency
-using the real httpd/raop.c stack over loopback (-threadtest,
-uxplay.cpp) -- see docs/bugs/2026-09-14-audio-resume-latency-on-seek.md
-for why this exists: a real capture showed a ~1s reconnect gap on seek,
-of which ~0.71s is client-paced (not server-controllable) and the rest
-hit the cheap same-codec-restart path with nothing slow found. Stress-
-tests many more cycles than a single live capture can, hunting for a
-slow outlier.
+using the real httpd/raop.c stack over loopback -- runs
+tools/synthetic-client.cpp's `threadtest` mode, a genuinely separate
+process from the unmodified uxplay_debug under test, driving the real
+request-handling stack with real RTSP requests entirely in Docker. See
+docs/bugs/2026-09-14-audio-resume-latency-on-seek.md for why this
+exists: a real capture showed a ~1s reconnect gap on seek, of which
+~0.71s is client-paced (not server-controllable) and the rest hit the
+cheap same-codec-restart path with nothing slow found. Stress-tests many
+more cycles than a single live capture can, hunting for a slow outlier.
 
 -replay cannot do this at all (bypasses lib/httpd.c/lib/raop.c
-entirely); -threadtest drives the real request-handling stack with real
-RTSP requests, entirely in Docker.
+entirely).
 """
 from __future__ import annotations
 
@@ -18,13 +19,10 @@ import re
 THRESHOLD_S = 0.5
 
 
-def _run_threadtest(docker_runner, n: int, gap_s: float, log_path):
+def _run_threadtest(two_process_runner, n: int, gap_s: float):
     budget_s = 2 + n * (1 + gap_s)
-    return docker_runner.run(
-        ["-vs", "0", "-threadtest", str(n)],
-        env={"UX_THREADTEST_GAP_S": str(gap_s)},
-        timeout_s=budget_s,
-        log_path=log_path,
+    return two_process_runner.run(
+        "threadtest", mode_args=[str(n), "--gap-s", str(gap_s)], client_timeout_s=budget_s,
     )
 
 
@@ -59,14 +57,16 @@ def _analyze(log: str) -> list[dict]:
     return results
 
 
-def test_reconnect_latency_stress(docker_runner, trace_dir):
+def test_reconnect_latency_stress(two_process_runner, trace_dir):
     """N=50, zero inter-cycle gap: hunts for a slow outlier across many
     more cycles than one real capture shows."""
     from perfetto_trace import Trace
 
     log_path = trace_dir.parent / "logs" / "reconnect-latency-stress.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log = _run_threadtest(docker_runner, n=50, gap_s=0.0, log_path=log_path)
+    server_log, client_log = _run_threadtest(two_process_runner, n=50, gap_s=0.0)
+    log = server_log + client_log
+    log_path.write_text(log)
     results = _analyze(log)
     assert results, f"no cycles measured -- see {log_path}"
 
@@ -92,7 +92,7 @@ def test_reconnect_latency_stress(docker_runner, trace_dir):
     assert worst <= THRESHOLD_S, f"worst reconnect_span={worst:.4f}s (limit {THRESHOLD_S}s), mean={sum(spans)/len(spans):.4f}s -- see {log_path}"
 
 
-def test_reconnect_latency_realistic_pacing(docker_runner, trace_dir):
+def test_reconnect_latency_realistic_pacing(two_process_runner, trace_dir):
     """N=10, 1s inter-cycle gap approximating the real capture's
     client-paced ~0.71s TEARDOWN-to-SETUP gap. Not gated against
     THRESHOLD_S (that gap is client-paced, not server-controllable) --
@@ -102,7 +102,9 @@ def test_reconnect_latency_realistic_pacing(docker_runner, trace_dir):
 
     log_path = trace_dir.parent / "logs" / "reconnect-latency-paced.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log = _run_threadtest(docker_runner, n=10, gap_s=1.0, log_path=log_path)
+    server_log, client_log = _run_threadtest(two_process_runner, n=10, gap_s=1.0)
+    log = server_log + client_log
+    log_path.write_text(log)
     results = _analyze(log)
     assert results, f"no cycles measured -- see {log_path}"
 

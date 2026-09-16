@@ -1,20 +1,23 @@
 """Regression test for the NTP-sync-state-not-reset-on-restart bug
-(UxPlay/lib/raop_rtp.c, see docs/audio-pipeline.md). Runs the scripted
-`-ntpresynccheck` driver (uxplay.cpp), which establishes a real session
-and sync, restarts it, and sends a probe packet before any new sync
-arrives -- asserting the fix's behavior: that packet must be withheld
-until a fresh sync arrives, then render with a timestamp consistent with
-a later, correctly-synced probe.
+(UxPlay/lib/raop_rtp.c, see docs/audio-pipeline.md). Runs
+tools/synthetic-client.cpp's `ntpresync` mode -- a genuinely separate
+process from the unmodified uxplay_debug under test (see
+tools/pytest/conftest.py's TwoProcessRunner) -- which establishes a real
+session and sync, restarts it, and sends a probe packet before any new
+sync arrives -- asserting the fix's behavior: that packet must be
+withheld until a fresh sync arrives, then render with a timestamp
+consistent with a later, correctly-synced probe.
 """
 from __future__ import annotations
 
 import re
 
 
-def test_ntp_resync_withholds_stale_probe(docker_runner, trace_dir):
+def test_ntp_resync_withholds_stale_probe(two_process_runner, trace_dir):
     from perfetto_trace import Trace
 
-    log = docker_runner.run(["-vs", "0", "-ntpresynccheck"], timeout_s=4.0)
+    server_log, client_log = two_process_runner.run("ntpresync", client_timeout_s=4.0)
+    log = server_log + client_log
 
     def t(pattern):
         m = re.search(pattern, log)

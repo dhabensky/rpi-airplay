@@ -1,8 +1,9 @@
 #!/bin/bash
-# Builds uxplay_debug against the shared Dockerfile tooling image, writing
-# the result to the given output path. One build recipe shared by `make
-# uxplay`, tools/deploy.sh, and tools/verify-reproducible-build.sh, instead
-# of each carrying its own copy of the same docker invocation.
+# Builds uxplay_debug (and tools/synthetic-client.cpp's binary, alongside
+# it in the same directory) against the shared Dockerfile tooling image,
+# writing the result to the given output path. One build recipe shared by
+# `make uxplay`, tools/deploy.sh, and tools/verify-reproducible-build.sh,
+# instead of each carrying its own copy of the same docker invocation.
 #
 # UxPlay/ is bind-mounted read-only and copied to a container-local path
 # (/src/UxPlay) before building -- keeps the host's submodule checkout
@@ -37,7 +38,11 @@ mkdir -p "$(dirname "$out")"
 # bits, so a plain `touch` alone would leave it non-executable.
 touch "$out"
 chmod +x "$out"
+synth_out="$(dirname "$out")/synthetic-client"
+touch "$synth_out"
+chmod +x "$synth_out"
 out_abs="$(cd "$(dirname "$out")" && pwd)/$(basename "$out")"
+synth_out_abs="$(cd "$(dirname "$synth_out")" && pwd)/$(basename "$synth_out")"
 src_abs="$(cd "$src" && pwd)"
 
 docker build -q -t rpi-airplay-buildenv -f Dockerfile .
@@ -45,6 +50,7 @@ docker build -q -t rpi-airplay-buildenv -f Dockerfile .
 docker run --rm \
   -v "$src_abs":/mnt/UxPlay-src:ro \
   -v "$out_abs":/out/uxplay_debug \
+  -v "$synth_out_abs":/out/synthetic-client \
   -e SOURCE_DATE_EPOCH=1788797385 \
   rpi-airplay-buildenv \
   bash -c '
@@ -60,4 +66,9 @@ docker run --rm \
     make install
     uxplay -v 2>&1 | head -5 || uxplay -h 2>&1 | head -5
     cp /usr/local/bin/uxplay /out/uxplay_debug
+    if [ -f /src/UxPlay/build/synthetic-client ]; then
+      cp /src/UxPlay/build/synthetic-client /out/synthetic-client
+    else
+      echo "(no tools/synthetic-client.cpp target at this ref -- skipping)"
+    fi
   '

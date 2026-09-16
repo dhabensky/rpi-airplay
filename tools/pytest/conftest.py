@@ -152,6 +152,117 @@ def docker_runner(uxplay_binary) -> DockerRunner:
     return DockerRunner(uxplay_binary)
 
 
+@pytest.fixture(scope="session")
+def synthetic_client_binary() -> Path:
+    """Path to tools/synthetic-client.cpp's binary. Deliberately always
+    built from the current UxPlay/ working tree, ignoring --uxplay-ref:
+    it's test infrastructure that talks real RTSP/RTP wire protocol to
+    whatever server is under test, not part of what a before/after
+    comparison varies -- an old --uxplay-ref before this file existed
+    still gets driven by the current client, same as a real AirPlay
+    client would be unaffected by which uxplay commit it happens to be
+    talking to."""
+    out = REPO_ROOT / "build" / "uxplay-refs" / "_synthetic-client-current" / "uxplay_debug"
+    synth = out.parent / "synthetic-client"
+    if synth.exists() and synth.stat().st_size > 0:
+        return synth
+    subprocess.run(["./tools/build-uxplay.sh", str(out)], cwd=REPO_ROOT, check=True)
+    if not synth.exists() or synth.stat().st_size == 0:
+        raise RuntimeError(
+            f"tools/build-uxplay.sh didn't produce {synth} -- is UxPlay/tools/synthetic-client.cpp "
+            f"(and its CMakeLists.txt target) present in the current working tree?"
+        )
+    return synth
+
+
+class TwoProcessRunner:
+    """Runs an UNMODIFIED uxplay_binary (zero special test-only flags --
+    -threadtest/-ntpresynccheck/-resendstormcheck/-resendrecoverycheck and
+    their backing code were removed from uxplay.cpp entirely on this
+    branch) and tools/synthetic-client.cpp's binary as two genuinely
+    separate OS processes sharing one container's loopback interface --
+    not two threads in the server's own address space, which is what the
+    old in-process driver did and the whole reason this class exists.
+
+    uxplay_binary always gets `-ble <tmpfile>`: this plain container has
+    no avahi/dbus running, so dnssd_register_raop() fails, and
+    register_dnssd() failing is normally FATAL (main() tears the whole
+    server down) -- `-ble` is a real, pre-existing, non-test-specific
+    product flag ("BluetoothLE beacon" discovery) whose failure-tolerance
+    branch (`if (ble_filename.empty())`) happens to be exactly what's
+    needed here, and its write_bledata() prints the real bound RAOP port
+    ("port %u") as a side effect -- used to discover the port
+    synthetic-client should connect to, since raop_port is no longer a
+    same-process global a test driver can just read directly.
+    UX_THREADTEST_DIAG=1 is always set on the server: it only gates the
+    RENDER-BUFFER-CALL/DECODED-BUFFER-OUT diagnostic prints
+    (renderers/audio_renderer.c's TT_DIAG macro), never changes actual
+    server behavior, and different modes need different subsets of it."""
+
+    def __init__(self, uxplay_binary: Path, synthetic_client_binary: Path):
+        self.uxplay_binary = uxplay_binary
+        self.synthetic_client_binary = synthetic_client_binary
+        subprocess.run(
+            ["docker", "build", "-q", "-t", "rpi-airplay-buildenv", "-f", "Dockerfile", "."],
+            cwd=REPO_ROOT, check=True, capture_output=True,
+        )
+
+    def _server_logs(self, name: str) -> str:
+        r = subprocess.run(["docker", "logs", name], capture_output=True, text=True)
+        return r.stdout + r.stderr
+
+    def _wait_for_port(self, name: str, timeout_s: float) -> int:
+        import re
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            m = re.search(r"^port (\d+)$", self._server_logs(name), re.MULTILINE)
+            if m:
+                return int(m.group(1))
+            time.sleep(0.2)
+        raise RuntimeError(
+            f"uxplay never printed its RAOP port within {timeout_s}s -- container {name} logs:\n"
+            f"{self._server_logs(name)}"
+        )
+
+    def run(self, mode: str, mode_args: list[str] | None = None,
+            server_args: list[str] | None = None, client_timeout_s: float = 10.0,
+            settle_s: float = 0.3) -> tuple[str, str]:
+        """Starts the server detached, waits for its real RAOP port, runs
+        synthetic-client <mode> against it via `docker exec` (a genuinely
+        separate process), waits `settle_s` for the server to finish
+        logging its side of the last exchange, then tears the container
+        down. Returns (server_log, client_log)."""
+        name = f"uxplay-pytest-{uuid.uuid4().hex[:8]}"
+        beacon_file = f"/tmp/beacon-{uuid.uuid4().hex[:8]}.dat"
+        cmd = [
+            "docker", "run", "-d", "--name", name,
+            "-v", f"{self.uxplay_binary}:/usr/local/bin/uxplay:ro",
+            "-v", f"{self.synthetic_client_binary}:/usr/local/bin/synthetic-client:ro",
+            "-e", "UX_THREADTEST_DIAG=1",
+            "rpi-airplay-buildenv", "stdbuf", "-oL", "-eL", "/usr/local/bin/uxplay",
+            "-nohold", "-vs", "0", "-ble", beacon_file,
+        ] + (server_args or [])
+        subprocess.run(cmd, cwd=REPO_ROOT, check=True, capture_output=True)
+        try:
+            port = self._wait_for_port(name, timeout_s=5.0)
+            client_cmd = [
+                "docker", "exec", name, "/usr/local/bin/synthetic-client", mode,
+                "--port", str(port),
+            ] + (mode_args or [])
+            client_proc = subprocess.run(client_cmd, capture_output=True, text=True, timeout=client_timeout_s)
+            client_log = client_proc.stdout + client_proc.stderr
+            time.sleep(settle_s)
+            server_log = self._server_logs(name)
+        finally:
+            subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+        return server_log, client_log
+
+
+@pytest.fixture(scope="session")
+def two_process_runner(uxplay_binary, synthetic_client_binary) -> TwoProcessRunner:
+    return TwoProcessRunner(uxplay_binary, synthetic_client_binary)
+
+
 class PiTarget:
     """Wraps the sshpass ssh/scp pattern every Pi-hardware bash script
     already used (same SSH_OPTS, same password default)."""
