@@ -122,7 +122,7 @@ actual reported symptom:
 See `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md` for the full
 two-capture investigation (first fix deployed and found insufficient,
 second capture traced the real mechanism), and `docs/threadtest.md`'s
-`-resendstormcheck` section for how both are regression-tested
+`synthetic-client resendstorm` section for how both are regression-tested
 (`tools/pytest/test_resend_storm.py`) without needing real packet loss
 or Pi hardware — including matching the synthetic keepalive rate to
 AAC-ELD's real cadence, which turned out to matter: an earlier, faster,

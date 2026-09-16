@@ -1,6 +1,7 @@
-# `-threadtest`: real multi-threaded server test tool
+# `tools/synthetic-client.cpp`: real multi-threaded server test tool
 
-`-threadtest N` (`uxplay.cpp`) drives the real `raop_init()`/
+`synthetic-client threadtest N --port <raop_port>`
+(`UxPlay/tools/synthetic-client.cpp`) drives the real `raop_init()`/
 `raop_start_httpd()` server over loopback with a minimal synthetic AirPlay
 client, instead of `-replay`'s single-thread callback-injection model.
 This exercises the real httpd thread, real `conn_request()`/
@@ -10,25 +11,45 @@ calls `video_process()`/`audio_process()`/`audio_renderer_start()`
 directly from one feeder thread, bypassing `lib/httpd.c` and `lib/raop.c`
 entirely).
 
+`synthetic-client` is a **standalone binary**, built alongside
+`uxplay_debug` from the same CMake project (`tools/build-uxplay.sh`
+builds and copies out both) but run as a genuinely separate OS process --
+not a thread compiled into `uxplay.cpp` itself. The server under test is
+always the real, unmodified shipped binary; zero test-only CLI flags
+exist in it for this purpose. See `tools/pytest/conftest.py`'s
+`TwoProcessRunner` for the exact two-process pattern the pytest suite
+uses to drive this.
+
 ## Usage
 
 ```
-uxplay -vs 0 -threadtest N
+# terminal/process 1: an unmodified server, audio-only, no avahi needed
+uxplay -vs 0 -nohold -ble /tmp/beacon.dat -p 7000
+
+# terminal/process 2 (or `docker exec` into the same container): the client
+synthetic-client threadtest N --port <raop_port> [--gap-s S] [--host 127.0.0.1]
 ```
 
 - `-vs 0` disables video, so this runs without Raspberry Pi hardware (no
   DRM/v4l2h264dec needed) — audio-only, works in a plain Docker container
   or on the Pi.
+- `-ble <file>` is a real, pre-existing, non-test product flag (BluetoothLE
+  beacon discovery) whose failure-tolerance path happens to let the server
+  start in a plain container with no avahi/dbus daemon (`dnssd_register_raop`
+  failing is otherwise fatal) -- its `write_bledata()` side effect also
+  prints the real bound RAOP port (`port %u`), which is how the client
+  discovers `<raop_port>` instead of reading a same-process global.
 - `N` is the number of SETUP/TEARDOWN cycles to run.
-- `UX_THREADTEST_GAP_S=<seconds>` (env var): inter-cycle gap. The driver
-  sends a `POST /feedback` keepalive at least every 2s during the gap, so
-  gaps longer than the server's missed-feedback/`-reset` timeout (default
-  15s) don't get the connection killed.
-- `UX_THREADTEST_DIAG=1` (env var, also set automatically by `-threadtest`
-  itself): enables timing/state print lines from both the driver and the
-  server side (`TT_DIAG` macro, `renderers/audio_renderer.c`) — connection
-  restart timing, deferred-callback execution timing, and a
-  decode-buffer-count probe on the audio decoder's output pad.
+- `--gap-s S`: inter-cycle gap. The client sends a `POST /feedback`
+  keepalive at least every 2s during the gap, so gaps longer than the
+  server's missed-feedback/`-reset` timeout (default 15s) don't get the
+  connection killed.
+- `UX_THREADTEST_DIAG=1` (env var, set on the **server** process): enables
+  timing/state print lines from the server side (`TT_DIAG` macro,
+  `renderers/audio_renderer.c`) — connection restart timing,
+  deferred-callback execution timing, and a decode-buffer-count probe on
+  the audio decoder's output pad. Harmless to leave on always; gates
+  diagnostic output only, never changes server behavior.
 
 ## What the driver does
 
@@ -65,9 +86,9 @@ uxplay -vs 0 -threadtest N
 
 ## Known limitation
 
-The driver sends one real captured AAC-ELD frame repeated (only
+The client sends one real captured AAC-ELD frame repeated (only
 seqnum/timestamp incrementing) rather than a genuine continuous encoded
-sequence. Confirmed empirically (2026-09-14, driving `-threadtest` with a
+sequence. Confirmed empirically (2026-09-14, driving `threadtest` with a
 real sync packet for the first time — see below): the repeated,
 per-packet-re-encrypted content consistently fails
 `audio_renderer_render_buffer()`'s own frame-validity check (the decrypted
@@ -82,14 +103,14 @@ audio thread dequeued and handed off a synced packet" with this driver;
 reason. Diagnosing genuine decode failures needs a longer/varied real
 captured sequence fed frame-by-frame instead.
 
-## `-ntpresynccheck`: differential regression check
+## `synthetic-client ntpresync`: differential regression check
 
 ```
-uxplay -vs 0 -ntpresynccheck
+synthetic-client ntpresync --port <raop_port>
 ```
 
 A second, narrower scripted-client mode (same connection/FairPlay/SETUP
-machinery as `-threadtest`, different sequence): establishes a session and
+machinery as `threadtest`, different sequence): establishes a session and
 a real RTCP sync packet, restarts (TEARDOWN+SETUP), sends one audio packet
 *before* any new sync packet, then sends a fresh sync packet and a second
 audio packet. Prints `SENT-PROBE-A`/`SENT-SYNC-2`/`SENT-PROBE-B` markers
@@ -100,10 +121,10 @@ own (no long-lived server loop). Driven by
 tree and asserts the RTP-timestamp-to-NTP-time sync state reset in
 `raop_rtp_start_audio()` behaves correctly (see `docs/audio-pipeline.md`).
 
-## `-resendstormcheck`: real ~2.8s dropout regression check
+## `synthetic-client resendstorm`: real ~2.8s dropout regression check
 
 ```
-uxplay -vs 0 -resendstormcheck
+synthetic-client resendstorm --port <raop_port>
 ```
 
 A third, narrower scripted-client mode. Unlike every other mode here, it
@@ -144,13 +165,13 @@ tree and asserts both `RESOLVED-AT` (primary) and the count (secondary)
 stay under threshold — see
 `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`.
 
-## `-resendrecoverycheck`: end-to-end recovery-time comparison (no Pi/network needed)
+## `synthetic-client resendrecovery`: end-to-end recovery-time comparison (no Pi/network needed)
 
 ```
-uxplay -vs 0 -resendrecoverycheck
+synthetic-client resendrecovery --port <raop_port>
 ```
 
-Same setup as `-resendstormcheck` (real `controlPort`, permanent 5-7 gap,
+Same setup as `resendstorm` (real `controlPort`, permanent 5-7 gap,
 5ms keepalive stream), but this mode actually answers resend requests --
 modeling a contended channel instead of a real lossy WiFi link, which a
 loopback Docker interface can't reproduce: each received resend-request
@@ -191,12 +212,12 @@ investigation path, including the wrong turn.
 
 ## `tools/pytest/test_reconnect_latency.py`: reconnect-latency regression guard
 
-Drives plain `-threadtest N` (not a separate mode) and measures, per cycle,
+Drives plain `synthetic-client threadtest N` (not a separate mode) and measures, per cycle,
 `SEND-TEARDOWN` -> the next cycle's first `RENDER-BUFFER-CALL` — the full
 server-side "reconnect to audio flowing again" span. Two runs: a 50-cycle
-`UX_THREADTEST_GAP_S=0` stress run (hunts for a slow/growing outlier no
+`--gap-s 0` stress run (hunts for a slow/growing outlier no
 single real capture could show) asserted against a 0.5s threshold, and a
-10-cycle `UX_THREADTEST_GAP_S=1` run reported informationally only (the
+10-cycle `--gap-s 1` run reported informationally only (the
 inserted 1s gap deliberately approximates the client-paced,
 not-server-controllable portion of a real reconnect — see
 `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md` — so it's not

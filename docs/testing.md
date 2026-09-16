@@ -20,24 +20,29 @@ Scope: pure-function/single-callback correctness. Cannot exercise
 threading, timing, or anything that needs a running GStreamer pipeline or
 real network I/O.
 
-## `-threadtest N` / `-ntpresynccheck` — synthetic-client, real-server tests
+## `tools/synthetic-client.cpp` — standalone test-client, real-server tests
 
-Requires: Docker (`make uxplay`) to build; runs via `docker run -v
-"$PWD/build/uxplay_debug":/usr/local/bin/uxplay:ro rpi-airplay-buildenv
-/usr/local/bin/uxplay -vs 0 -threadtest N` (or `-ntpresynccheck`). No Pi
-hardware needed for the audio path (`-vs 0` skips video/DRM entirely).
-Can also run on the Pi for a real `alsasink` instead of `autoaudiosink`.
+Requires: Docker (`tools/build-uxplay.sh` also builds this binary
+alongside `uxplay_debug`, same source directory, same command). Run as a
+genuinely separate process from an unmodified `uxplay_debug` -- e.g.
+`docker exec <container> /usr/local/bin/synthetic-client threadtest N
+--port <raop_port>` against a container already running `uxplay -vs 0
+-ble <file>` (see `tools/pytest/conftest.py`'s `TwoProcessRunner` for the
+exact pattern the pytest suite below uses). No Pi hardware needed for the
+audio path (`-vs 0` skips video/DRM entirely). Can also run on the Pi for
+a real `alsasink` instead of `autoaudiosink`.
 
-A minimal synthetic AirPlay client (built into `uxplay.cpp`, see
-`docs/threadtest.md`) drives the *real* `raop_init()`/httpd thread/
-`conn_request()`/`raop_handler_setup()`/`raop_rtp_thread_udp` over
-loopback — the only way to exercise that layer without a live AirPlay
-client, since `-replay` bypasses it entirely (see below).
+This is a standalone binary, not a flag baked into `uxplay.cpp` -- moved
+out entirely (see `docs/threadtest.md`) so the server under test is
+always the real, unmodified shipped binary, and the "fake AirPlay client"
+is a real, separate OS process talking real RTSP/RTP over loopback, not a
+thread sharing the server's own address space.
 
 | Mode | Checks |
 |---|---|
-| `-threadtest N` | Connection/session lifecycle across N real SETUP/TEARDOWN cycles (rapid or `UX_THREADTEST_GAP_S`-spaced): no orphaned `raop_rtp_t` objects, deferred-callback timing, decode-buffer counts. Exploratory/manual — prints diagnostics, no automated verdict. |
-| `-ntpresynccheck` | One specific scripted sequence (session, sync, restart, probe-before-sync, fresh sync, probe-after-sync) for the RTP-timestamp-to-NTP-time sync-reset bug. Prints timestamped markers; verdict computed by the wrapping script (below). |
+| `threadtest N [--gap-s S]` | Connection/session lifecycle across N real SETUP/TEARDOWN cycles (rapid or gap-spaced): no orphaned `raop_rtp_t` objects, deferred-callback timing, decode-buffer counts. Exploratory/manual — prints diagnostics, no automated verdict. |
+| `ntpresync` | One specific scripted sequence (session, sync, restart, probe-before-sync, fresh sync, probe-after-sync) for the RTP-timestamp-to-NTP-time sync-reset bug. Prints timestamped markers; verdict computed by the wrapping test (below). |
+| `resendstorm` / `resendrecovery` | Resend-request-rate and end-to-end recovery-time checks for the audio resend-flood bug (see `docs/bugs/2026-09-14-audio-resume-latency-on-seek.md`). |
 
 Scope: connection/session/thread lifecycle and RTP-layer timing. Payload
 content is a single real captured AAC-ELD frame repeated, not a genuine
@@ -56,14 +61,30 @@ Replaced the old `tools/test-*-e2e.sh` scripts (same coverage, same
 underlying mechanisms -- Docker `-threadtest`/`-ntpresynccheck`/
 `-resendstormcheck` drivers, real-Pi `-replay`/reboot checks -- just
 converted to pytest, since ad-hoc bash-plus-inline-Python heredocs don't
-compose or report well at 7+ scripts). Every test still targets exactly
-ONE binary per run -- `--uxplay-ref <git-ref>` builds a specific UxPlay
-submodule commit instead of the current working tree (via a throwaway
-`git worktree`, cached per ref), so demonstrating a bug and its fix is
-"run the whole suite twice": once with `--uxplay-ref
-<parent-of-fix-commit>` (real failures expected) and once against
-current HEAD (PASS expected) -- not a parametrized test that already
-knows about both.
+compose or report well at 7+ scripts). `test_ntp_resync.py`,
+`test_resend_storm.py`, and `test_reconnect_latency.py` were later moved
+again, off the in-process `-threadtest`/`-ntpresynccheck`/
+`-resendstormcheck` driver flags entirely, onto
+`tools/synthetic-client.cpp` (above) -- driving an unmodified
+`uxplay_debug` as a genuinely separate process via the `two_process_runner`
+fixture, instead of a thread compiled into the server's own binary.
+
+Every test still targets exactly ONE server binary per run --
+`--uxplay-ref <git-ref>` builds a specific UxPlay submodule commit
+instead of the current working tree (via a throwaway `git worktree`,
+cached per ref; defaults to the `dhabensky-clean` branch this repo's
+`.gitmodules` tracks), so demonstrating a bug and its fix is "run the
+whole suite twice": once with `--uxplay-ref <parent-of-fix-commit>` (real
+failures expected) and once against current HEAD (PASS expected) -- not
+a parametrized test that already knows about both.
+`tools/synthetic-client.cpp` itself is always built from the current
+working tree regardless of `--uxplay-ref` (`synthetic_client_binary`
+fixture) -- it's test infrastructure talking real wire protocol to
+whatever server is under test, not part of what a before/after comparison
+varies. See `tools/pytest/reports/` for real before/after evidence
+(revisions tested, actual logs, rendered pictures, and a genuine written
+interpretation) gathered for each test -- including honest flags on which
+tests' usefulness could and couldn't be confirmed this way.
 
 Every test also writes a Perfetto trace (Chrome Trace Format JSON,
 `--trace-dir`, default `build/traces/`) built from the exact timestamped
@@ -177,7 +198,7 @@ restores the service in a `finally`, regardless of pass/fail).
 - Changing pure logic with no I/O → unit test.
 - Changing `conn_request()`/`raop_handler_setup()`/connection or session
   lifecycle, or anything in `lib/raop_rtp.c`'s RTP-timestamp/sync/timing
-  path → `-threadtest`/a dedicated `-ntpresynccheck`-style scripted check
+  path → `synthetic-client threadtest`/a dedicated `ntpresync`-style scripted check
   (`test_ntp_resync.py`, `test_reconnect_latency.py`), validated with
   `--uxplay-ref` against the prior revision to confirm it actually fails
   there.

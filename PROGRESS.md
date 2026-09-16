@@ -1783,3 +1783,94 @@ deleted; `docs/testing.md`, `docs/threadtest.md`,
 and this file's own earlier entries deliberately left referencing the
 old script names -- historical record of what was actually run at the
 time, not something to revise after the fact.
+
+## 2026-09-16: pytest suite pushed back -- test scaffolding baked into
+uxplay.cpp, unverified before/after claims, no per-test evidence
+
+Direct, fair pushback on the pytest rewrite above: `-threadtest`/
+`-ntpresynccheck`/`-resendstormcheck`/`-resendrecoverycheck` were
+synthetic AirPlay *clients* compiled into `uxplay.cpp` itself and run as
+`g_thread_new()` threads inside the same process as the server under
+test -- not an honest e2e test (it tests a different program than what
+ships). Also fair: several "before/after" claims in an earlier status
+report were unverified assertions, not actual runs. Asked for: (1) the
+driver code extracted into a real separate process, test-only flags in
+uxplay.cpp minimized toward zero; (2) real before/after commit pairs for
+every test, manufactured via revert+revert-of-revert if real history
+lacks one; (3) a report per test with real revisions, real before/after
+evidence (trace + picture + a genuine one-time interpretation), not
+assertions; (4) low-value tests explicitly flagged.
+
+Redirected mid-plan: instead of layering revert-commits onto the
+existing tangled `dhabensky-dev` history, start a **fresh branch**
+(`dhabensky-clean`, pushed to the `dhabensky` remote, now what this
+repo's `.gitmodules` tracks) from local `master` -- itself 110 real
+upstream commits ahead of tag `v1.73`, clean and linear -- and replay
+this fork's own 37-commit tail on top as ~18 curated commits instead:
+skip two net-zero revert pairs found in the real history (blanking
+fix+immediate-revert, frozen-frame-instant fix+immediate-revert -- empty
+diffs, confirmed via `git diff`), split three commits that bundled a
+real product fix with driver code (keep the fix, drop the
+`uxplay.cpp` hunk -- the driver gets built fresh instead), drop two
+pure-driver commits entirely, keep `57a3bdf`+`1992e08` (the DRM-master-
+race regression/fix pair) untouched as an already-clean natural
+boundary. Net effect: `-threadtest` and friends never exist in
+`uxplay.cpp`'s history on this branch at all, and no synthetic revert
+commits were needed anywhere -- controlling the commit boundaries
+directly made that unnecessary.
+
+Built `UxPlay/tools/synthetic-client.cpp`: a standalone binary linking
+`libairplay.a` (same lib `uxplay` links, zero protocol reimplementation),
+driving an **unmodified** `uxplay_debug` over loopback as a genuinely
+separate OS process (`docker exec` into the same container -- simplest
+way to share loopback, and CLOCK_MONOTONIC turns out to be shared too,
+same kernel/namespace, so client and server timestamps are directly
+comparable). `grep` for the four old flag strings in `uxplay.cpp`:
+empty. Needed one real product flag to make this work in a plain
+container with no avahi/dbus (`dnssd_register_raop` failing is normally
+fatal) -- `-ble <file>`, a pre-existing BluetoothLE-beacon discovery
+flag whose failure-tolerance branch happens to fit, and whose
+`write_bledata()` side effect prints the real bound RAOP port (replacing
+the same-process global the old in-process driver could just read).
+
+Caught a real defect in my own port while trying to actually run the
+promised before/after comparison for `test_ntp_resync.py`: the ported
+fix commit still bundled its `RENDER-BUFFER-CALL` diagnostic
+(`renderers/audio_renderer.c`) together with the behavioral fix -- the
+exact "instrumentation born with the fix" pattern already documented
+above for the *original* `59c5dcc`/`c768aba` history, which I'd
+apparently reproduced by accident while porting. Running against the
+fix's direct parent failed for the wrong reason (no `RENDER-BUFFER-CALL`
+output existed yet at all, fix or no fix) rather than showing the real
+bug. Split into two commits on `dhabensky-clean`: diagnostic
+instrumentation first, isolated fix second -- force-pushed the
+correction (this branch is brand new this session, nobody else depends
+on it yet).
+
+With that fixed, got real evidence for two tests: `test_ntp_resync.py`
+(before: probe A rendered 0.41s *before* the second sync, using stale
+sync state; after: withheld correctly, both probes render together right
+after the fresh sync) and `test_resend_storm.py` (before: 2.691s stall,
+matching the documented ~2.8s dropout almost exactly; after: 0.112s, a
+~24x cut). `test_reconnect_latency.py` confirmed to have no single bug
+to bisect against (by its own design, exploratory), run once for real
+instead. Wrote `tools/pytest/render_trace_png.py` (new -- static PNG
+rendering of a trace JSON, matplotlib, for dropping into a markdown
+report) and `tools/pytest/reports/*.md` with real logs, real pictures,
+and an actual reading of each one -- not a template.
+
+The remaining 4 tests (`test_render_health.py`,
+`test_resolution_change_gap.py`, `test_video_reconnect.py`,
+`test_fb0_stays_black.py`) all need the real Pi, which was unreachable
+this session (192.168.1.34, confirmed via repeated ping, not a one-off
+blip). Docker-side prep done anyway where possible (both binaries for
+the video-reconnect before/after pair already built). User confirmed:
+postpone Pi verification, come back to it in the evening; meanwhile keep
+doing whatever doesn't need it -- this entry, the docs updates
+(`docs/testing.md`, `docs/threadtest.md`, `docs/README.md`,
+`docs/audio-pipeline.md`), and `tools/pytest/reports/README.md`'s
+status/deletion-candidate summary are that work. Noted but not fixed:
+`docs/upstream-comparison.md` says "Status: current, regenerated against
+submodule commit `f009ad9`" -- genuinely stale now that the fork's own
+history was rewritten, but regenerating its full file-by-file diff
+audit against the new base is a separate, sizable task, not done here.

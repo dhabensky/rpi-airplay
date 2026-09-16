@@ -16,10 +16,12 @@ split by concern so each stays independently readable:
   against pristine upstream `FDH2/UxPlay` tag `v1.73.7`
   (submodule commit `df67c21`), file by file, with the behaviorally
   significant changes called out.
-- **[threadtest.md](threadtest.md)** — `-threadtest N`, a synthetic
-  AirPlay client that drives the real httpd/`conn_request()`/
-  `raop_handler_setup()`/`raop_rtp_thread_udp` over loopback, for testing
-  connection/session lifecycle without live hardware or a real client.
+- **[threadtest.md](threadtest.md)** — `tools/synthetic-client.cpp`'s
+  `threadtest N` mode, a standalone synthetic AirPlay client (a genuinely
+  separate process, not code compiled into `uxplay.cpp`) that drives the
+  real httpd/`conn_request()`/`raop_handler_setup()`/`raop_rtp_thread_udp`
+  over loopback, for testing connection/session lifecycle without live
+  hardware or a real client.
 - **[testing.md](testing.md)** — full test framework overview: every test
   type/suite, what it requires (unit/Docker/real Pi hardware), and —
   importantly — what each one does *not* check.
