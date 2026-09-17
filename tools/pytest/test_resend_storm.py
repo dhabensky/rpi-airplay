@@ -6,9 +6,9 @@ the real resend-wait path, creates a permanent 3-packet gap, and keeps
 sending one audio packet at AAC-ELD's real cadence (~10.9ms) for 3.5s.
 
 To see the bug this guards against: `pytest test_resend_storm.py
---uxplay-ref 74a143e` (dhabensky-clean's commit right before the actual
-fix, 80d1004) -- expect a real FAIL, and the trace's "resend" track
-keeps firing while "resolution" never does.
+--uxplay-ref 5c68ff2` (dhabensky-clean-2's commit right before the
+stall-timeout fix, bebd208) -- expect a real FAIL, and the trace's
+"resend" track keeps firing while "resolution" never does.
 """
 from __future__ import annotations
 

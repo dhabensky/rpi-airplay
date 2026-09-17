@@ -1914,3 +1914,53 @@ test-only flags left in `uxplay.cpp`), clean curated history on
 per test with genuine before/after evidence where that concept applies
 and an honest explanation where it doesn't, and every test's usefulness
 either confirmed or specifically, concretely flagged -- not vaguely.
+
+## 2026-09-17: `dhabensky-clean-2` -- a second, stricter pass on history hygiene
+
+Direct pushback on `dhabensky-clean`: wrong base (built on `master`, a
+divergent line, instead of `df67c212a4`, `dhabensky-dev`'s actual fork
+point), commits mixing unrelated production fixes with test-driver code
+in the same diff, non-atomic commits bundling multiple ideas, missing
+"Steps"/"Fix" sections on bug commits, and commit pairs that amount to
+"change then revert" instead of writing the final state directly. New
+branch `dhabensky-clean-2`, built from scratch on `df67c212a4`, replaying
+the 24 real fork-specific commits from that point as 24 new atomic
+commits -- each single-purpose (one bug, one feature, or one instrument),
+built and tested via Docker before every commit, three multi-bug/
+regression-chain commits collapsed into one clean commit each (written
+with the final correct behavior directly, never the buggy intermediate
+state), and all now-obsolete pure-driver/comment-cleanup commits dropped
+entirely rather than replayed then undone.
+
+One real bug found via this process, not assumed: the diagnostic
+instrumentation commit (`RENDER-BUFFER-CALL` etc., needed by
+`tools/synthetic-client.cpp`/`tools/pytest/`) has to land as its own
+commit before the NTP-sync-reset fix, exactly like the original history
+-- confirmed by first getting it wrong (bundling markers with a fix that
+doesn't need its own git parent to have them) and by a second real bug:
+the same-codec-restart branch introduced by that fix never reset the
+diagnostic counter, so a rapid, zero-gap reconnect stress test silently
+stopped producing any diagnostic output after its first cycle. Found by
+actually running `test_reconnect_latency.py`'s stress mode fresh (100%
+of cycles produced no data) rather than trusting an earlier, stale-cache
+"PASS" -- fixed by resetting the counter in that branch too, then
+verified with a completely fresh Docker cache.
+
+Re-ran every before/after pair against the new commit hashes for real
+(not just hash substitution): `test_ntp_resync.py`,
+`test_resend_storm.py`, `test_reconnect_latency.py` (Docker), and
+`test_render_health.py`/`test_resolution_change_gap.py`/
+`test_video_reconnect.py` on the real Pi. One new finding on
+`test_video_reconnect.py`: unlike `dhabensky-clean`'s problem (an
+adjacent-but-wrong commit pair), on this branch NO valid "before" commit
+can exist at all -- `-replay` (the test's own mechanism) is introduced
+later than the `skip_video_rebuild` fix it would otherwise verify,
+because this branch's history was deliberately built to never carry a
+bug forward into a later commit for tooling to reveal. Real positive
+PASS confirmed instead (245 continuous renders through a simulated
+reconnect, `skip_video_rebuild=1`), before/after claim withdrawn, test
+kept as legitimate coverage. All `tools/pytest/reports/*.md` and
+`.gitmodules`/`docs/testing.md` updated to `dhabensky-clean-2`; branch
+pushed to the `dhabensky` remote (force-pushed once, after the
+diagnostic-counter fix required reconstructing 7 commits on top of an
+inserted one).

@@ -72,7 +72,7 @@ fixture, instead of a thread compiled into the server's own binary.
 Every test still targets exactly ONE server binary per run --
 `--uxplay-ref <git-ref>` builds a specific UxPlay submodule commit
 instead of the current working tree (via a throwaway `git worktree`,
-cached per ref; defaults to the `dhabensky-clean` branch this repo's
+cached per ref; defaults to the `dhabensky-clean-2` branch this repo's
 `.gitmodules` tracks), so demonstrating a bug and its fix is "run the
 whole suite twice": once with `--uxplay-ref <parent-of-fix-commit>` (real
 failures expected) and once against current HEAD (PASS expected) -- not

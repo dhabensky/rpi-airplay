@@ -10,9 +10,10 @@ Known limitation, confirmed while writing this suite: `-replay` uses a
 single-thread callback-injection model that bypasses the real RTSP/
 network layer entirely, and the actual render-collapse bug
 (docs/bugs/2026-09-14-video-render-collapse.md) is a timing-dependent
-race in that layer -- `--uxplay-ref c768aba` (the commit right before
-the render-health watchdog fix) against every capture here still PASSES,
-confirmed directly. This test's real job is guarding against the
+race in that layer -- `--uxplay-ref 51c6fed` (the commit right before
+the render-health watchdog fix, on dhabensky-clean-2) against every
+capture here still PASSES, confirmed directly. This test's real job is
+guarding against the
 *other*, non-timing-dependent class of render-rate collapse
 (tools/captures/README.md's own original reason for existing: "a real
 client's non-native-resolution content triggered a render-rate collapse

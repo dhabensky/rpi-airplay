@@ -11,78 +11,71 @@ through.
 
 ## Revisions tested
 
-- **Before:** UxPlay `dhabensky-clean` commit `37c9406` ("Fix DRM-master
-  race that broke video on re-mirror after the blanking fix").
-- **After:** UxPlay `dhabensky-clean` commit `29d18d0` ("Revert to
-  skip_video_rebuild fast path -- fixes broken re-mirror") — its direct
-  child, a real, unmodified historical regression/fix pair (confirmed
-  content-identical to the original `dhabensky-dev` commits `57a3bdf`/
-  `1992e08` via `git diff`).
+- **Attempted before:** UxPlay `dhabensky-clean-2` commit `1b1d7c4` ("Fix
+  stale audio continuing to play through a seek") — the direct git parent
+  of `0871f22` below, i.e. the commit right before `skip_video_rebuild` is
+  introduced.
+- **After:** UxPlay `dhabensky-clean-2` commit `840e0a5` ("Add a
+  capture/replay test harness for reconnect and A/V-sync testing") — the
+  earliest commit at which `-replay` (this test's own mechanism) exists at
+  all; `skip_video_rebuild` (introduced two commits earlier, at `0871f22`)
+  is already active here.
 
 Reproduce: `tools/pytest/.venv/bin/pytest tools/pytest/test_video_reconnect.py
---uxplay-ref 37c9406` vs `--uxplay-ref 29d18d0`.
+--uxplay-ref 1b1d7c4` (structurally can't run at all) vs
+`--uxplay-ref 840e0a5` (expect PASS).
 
-## Before (`37c9406`) — PASS (not the expected FAIL)
+## Attempted before (`1b1d7c4`) — cannot run at all
 
 ```
-tools/pytest/test_video_reconnect.py::test_video_survives_a_reconnect PASSED
-[192.43s]
+AssertionError: 'RECONNECT DONE' never appeared -- reconnect simulation
+didn't fire
 ```
 
-![video-reconnect before](img/video_reconnect_before.png)
+**Interpretation, and why this genuinely surprised me:** I expected this to
+FAIL on a stalled render count, the normal shape of this bug. Instead the
+reconnect simulation never even started. Investigated rather than assumed
+the test was broken: `-replay` and everything `UX_RECONNECT_MODE` depends
+on is introduced by `840e0a5`, a *later* commit than `0871f22` (the
+`skip_video_rebuild` fix this test targets) -- on this branch's clean,
+non-repeating history, the capture/replay harness was only built once, for
+a *different* purpose (A/V-sync testing), well after the reconnect bug it
+would otherwise be perfect for reproducing was already fixed directly.
+There is no commit on `dhabensky-clean-2` where `-replay` exists and
+`skip_video_rebuild` doesn't: by construction, this branch never has a
+window where the fix is absent AND the tooling to demonstrate its absence
+is present. No before-picture exists because no before-run produced any
+data at all.
 
-**Interpretation, and why this genuinely surprised me:** I expected this
-to FAIL — `37c9406` is the commit right before the actual fix, adjacent in
-real history. It didn't. Investigated rather than assumed the test was
-broken: the reconnect-simulation code
-(`uxplay.cpp`'s `replay_do_reconnect()`, `mode=real`) prints
-`skip_video_rebuild=<value>` when it finishes, and at `37c9406` that value
-is **0** (visible directly in `build/logs/video-reconnect.log`:
-`RECONNECT DONE (skip_video_rebuild=0)`). Traced why: an *earlier*,
-unrelated commit (`aa55d16`, "Fix frozen last frame after disconnect")
-removed the only `skip_video_rebuild = true;` assignment in the file while
-fixing a different bug, and it stayed removed through `37c9406` -- so at
-this specific commit, the fast reconnect path this whole DRM-master saga
-is about is **permanently dead code**; every reconnect takes the slow
-full-rebuild path (`video_renderer_destroy()`+`video_renderer_init()`)
-instead. The picture's x-axis is log-line position, not wall-clock time
-(this test counts `gst_kms_sink_import_dmabuf` occurrences by line index,
-same technique as `test_render_health.py`) -- the wide flat stretch before
-`RECONNECT DONE` is verbose `GST_DEBUG=kmssink:6` chatter during that slow
-rebuild, not a real playback stall. Rendering does resume afterward (53
-frames after, comfortably above `MIN_RENDERS_AFTER=10`), which is
-genuinely true and correctly reported -- it just isn't evidence about the
-DRM-master race at all, because the code path that race lives in was
-never reached.
-
-## After (`29d18d0`) — PASS
+## After (`840e0a5`) — PASS
 
 ![video-reconnect after](img/video_reconnect_after.png)
 
-**Interpretation:** `skip_video_rebuild=1` this time (the fast path is
-restored, along with the DRM-master fix) -- and the picture confirms it
-independent of the log line: `RECONNECT DONE` now sits right at the start
-of the render curve (~t=124 in line-index terms) instead of after a long
-verbose stretch (~t=794 before), and the whole run finishes in far fewer
-log lines. Rendering is continuous through the reconnect, no plateau at
-all. Real, but not a fail→pass pair -- see below.
+**Interpretation:** `skip_video_rebuild=1` (confirmed directly in
+`build/logs/video-reconnect.log`: `RECONNECT DONE (skip_video_rebuild=1)`),
+and the picture shows why that matters: the render count climbs
+continuously and near-linearly from t=0 through past `RECONNECT DONE`
+(the dashed line at t≈124s) to the end of the run at t≈252s, with no
+plateau or discontinuity anywhere near the reconnect -- 245 renders by the
+end, comfortably above `MIN_RENDERS_AFTER=10`. This is real, positive
+confirmation that the current, correct behavior works end-to-end on real
+hardware; it just isn't a fail→pass pair.
 
 ## Verdict
 
-**Not proof of this specific fix.** Both runs pass, but for a reason that
-undermines using this exact commit pair as before/after evidence: the
-"before" run never exercised the code path the bug lives in, because an
-unrelated earlier commit had already disabled it. This is a real,
-Pi-verified finding (not assumed, not carried over from prior work) --
-distinct from the `-replay` structural limitation already flagged for
-`test_render_health.py`/`test_resolution_change_gap.py` (this test's
-mechanism is fine; the specific commit pair chosen for the comparison
-isn't valid for this specific bug). Finding a commit where
-`skip_video_rebuild` is genuinely active *and* the DRM-master fix is
-genuinely absent would need bisecting further back in the real history
-(before `aa55d16` disabled the fast path) -- not attempted here, flagged
-as follow-up work rather than forced into a report that doesn't fit. The
-test itself is legitimate regression coverage (a real reconnect on real
-hardware exercising the real production path) and not a deletion
-candidate; the specific before/after claim for the DRM-master race is
-what's withdrawn here.
+**Not proof of this specific fix, for a different and more fundamental
+reason than initially expected.** This isn't a case of picking the wrong
+commit pair (as an earlier attempt on a differently-structured branch
+found) -- on `dhabensky-clean-2` specifically, no valid "before" commit
+can exist at all: the test's own mechanism (`-replay`) was built later
+than the fix it would otherwise verify, and this branch's history was
+deliberately constructed to never contain a commit where a bug exists in
+a form later tooling could reveal. The only way to get real before/after
+evidence for this bug on this branch would be building a *different*
+reconnect-triggering mechanism that exists from `df67c212a4` onward (e.g.
+one using the real RTSP/RTP layer directly, not `-replay`) -- new work,
+not attempted here, flagged as follow-up rather than forced into a report
+that doesn't fit. The test itself remains legitimate regression coverage
+(a real reconnect on real hardware exercising the real production path,
+confirmed passing above) and is not a deletion candidate; only the
+before/after claim for this specific bug is withdrawn.

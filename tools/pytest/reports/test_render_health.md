@@ -9,16 +9,16 @@ synthetic).
 
 ## Revisions tested
 
-- **Before:** UxPlay `dhabensky-clean` commit `c1d0255` (the commit right
+- **Before:** UxPlay `dhabensky-clean-2` commit `51c6fed` (the commit right
   before the render-health watchdog).
-- **After:** UxPlay `dhabensky-clean` commit `dc2c26b` ("Add a
+- **After:** UxPlay `dhabensky-clean-2` commit `bf5247d` ("Add a
   render-health watchdog: auto-recover from a decode-without-render
   collapse").
 
 Reproduce: `tools/pytest/.venv/bin/pytest tools/pytest/test_render_health.py
---uxplay-ref c1d0255` vs `--uxplay-ref dc2c26b`.
+--uxplay-ref 51c6fed` vs `--uxplay-ref bf5247d`.
 
-## Before (`c1d0255`) — all 10 captures PASS
+## Before (`51c6fed`) — all 10 captures PASS
 
 ```
 10 passed in 276.32s
@@ -32,14 +32,14 @@ track each other closely through the whole replay, climbing to ~310 with
 no divergence. This is a genuinely healthy-looking picture, and it's real
 -- but it does not mean the bug this watchdog fixes doesn't exist. It means
 **this replay mechanism cannot trigger it**: confirmed directly (not
-assumed) in earlier work and re-confirmed here on `dhabensky-clean`
+assumed) in earlier work and re-confirmed here on `dhabensky-clean-2`
 specifically -- `-replay` uses a single-thread callback-injection model
 that bypasses `lib/httpd.c`/`lib/raop.c` entirely, and the actual bug
 (`docs/bugs/2026-09-14-video-render-collapse.md`) is a timing-dependent
 race in exactly that real-time RTSP/RTP layer. All 10 captures pass
 identically at the pre-fix commit.
 
-## After (`dc2c26b`) — all 10 captures PASS
+## After (`bf5247d`) — all 10 captures PASS
 
 ![render-health after](img/render_health_after.png)
 
@@ -49,7 +49,7 @@ Expected, given the above -- this isn't "the fix made no difference", it's
 
 ## Verdict
 
-**Confirmed (again, fresh, on `dhabensky-clean`) not proof of this
+**Confirmed (again, fresh, on `dhabensky-clean-2`) not proof of this
 specific fix.** Real regression coverage for a *different* class of
 render-rate collapse (this test's own original reason for existing: a
 real client's non-native-resolution content triggering a render-rate
