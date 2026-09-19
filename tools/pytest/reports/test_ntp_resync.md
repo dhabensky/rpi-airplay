@@ -9,10 +9,10 @@ in-process from a real, captured AAC-ELD frame baked into its own source.
 
 ## Revisions tested
 
-- **Before:** UxPlay `dhabensky-clean-2` commit `016345d` ("Add -threadtest
+- **Before:** UxPlay `dhabensky-clean-2` commit `eb229e1` ("Add -threadtest
   diagnostic instrumentation to the audio renderer") — has the
   `RENDER-BUFFER-CALL` diagnostic the test parses, but not yet the fix.
-- **After:** UxPlay `dhabensky-clean-2` commit `d8f8a6c` ("Fix audio dying
+- **After:** UxPlay `dhabensky-clean-2` commit `daa9477` ("Fix audio dying
   permanently after a repeated audio SETUP on a connection") — the very next
   commit, containing only the isolated behavioral fix
   (`lib/raop_rtp.c`'s `raop_rtp_start_audio()` reset + a companion
@@ -27,9 +27,9 @@ reason (no `RENDER-BUFFER-CALL` output whatsoever, fix or no fix), not
 evidence of the actual bug.
 
 Reproduce: `tools/pytest/.venv/bin/pytest tools/pytest/test_ntp_resync.py
---uxplay-ref 016345d` (expect FAIL) vs `--uxplay-ref d8f8a6c` (expect PASS).
+--uxplay-ref eb229e1` (expect FAIL) vs `--uxplay-ref daa9477` (expect PASS).
 
-## Before (`016345d`) — FAIL
+## Before (`eb229e1`) — FAIL
 
 ```
 AssertionError: probe A rendered at t=173906.9631 BEFORE the second sync
@@ -52,7 +52,7 @@ the stale RTP-timestamp-to-NTP mapping left over from the *first* sync
 restart's cold-start guard failing to actually reset, exactly as
 documented.
 
-## After (`d8f8a6c`) — PASS
+## After (`daa9477`) — PASS
 
 ![ntp-resync after](img/ntp_resync_after.png)
 

@@ -9,9 +9,8 @@ session (see tools/make-synthetic-cap.py's header for why).
 
 Synthesizes a valid .cap from a locally-generated H.264 test pattern
 (tools/make-synthetic-cap.py), deploys it, runs -replay with
-UX_RECONNECT_MODE=real (the actual production reconnect code path) and
-UX_RECONNECT_AT_MS set to fire partway through, with
-GST_DEBUG=kmssink:6. Verification: count kmssink's
+UX_RECONNECT_AT_MS set to fire partway through (drives the real
+production reconnect code path), with GST_DEBUG=kmssink:6. Verification: count kmssink's
 gst_kms_sink_import_dmabuf log lines (one per actually-rendered frame)
 before vs after the simulated reconnect -- a wedged decoder shows render
 activity stop dead after reconnect while the feeder keeps accepting
@@ -71,7 +70,7 @@ def test_video_survives_a_reconnect(pi_uxplay_deployed, trace_dir):
         pi.scp_to(cap_path, remote_cap)
         reconnect_ms = RECONNECT_AT_S * 1000
         pi.ssh(
-            f"GST_DEBUG=kmssink:6 UX_RECONNECT_MODE=real UX_RECONNECT_AT_MS={reconnect_ms} "
+            f"GST_DEBUG=kmssink:6 UX_RECONNECT_AT_MS={reconnect_ms} "
             f"stdbuf -oL -eL /usr/local/bin/uxplay_debug "
             f"-nohold -vd v4l2h264dec -vc identity -srgb no -n 'Living Room TV' -reset 60 "
             f"-vs 'kmssink qos=false ts-offset=300000000' "

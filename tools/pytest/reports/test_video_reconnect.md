@@ -11,21 +11,21 @@ through.
 
 ## Revisions tested
 
-- **Attempted before:** UxPlay `dhabensky-clean-2` commit `b8621e8` ("Fix
+- **Attempted before:** UxPlay `dhabensky-clean-2` commit `c5a19be` ("Fix
   stale audio continuing to play through a seek") — the direct git parent
-  of `643fac1` below, i.e. the commit right before `skip_video_rebuild` is
+  of `aaad0bb` below, i.e. the commit right before `skip_video_rebuild` is
   introduced.
-- **After:** UxPlay `dhabensky-clean-2` commit `43bb141` ("Add a
+- **After:** UxPlay `dhabensky-clean-2` commit `01cc470` ("Add a
   capture/replay test harness for reconnect and A/V-sync testing") — the
   earliest commit at which `-replay` (this test's own mechanism) exists at
-  all; `skip_video_rebuild` (introduced two commits earlier, at `643fac1`)
+  all; `skip_video_rebuild` (introduced two commits earlier, at `aaad0bb`)
   is already active here.
 
 Reproduce: `tools/pytest/.venv/bin/pytest tools/pytest/test_video_reconnect.py
---uxplay-ref b8621e8` (structurally can't run at all) vs
-`--uxplay-ref 43bb141` (expect PASS).
+--uxplay-ref c5a19be` (structurally can't run at all) vs
+`--uxplay-ref 01cc470` (expect PASS).
 
-## Attempted before (`b8621e8`) — cannot run at all
+## Attempted before (`c5a19be`) — cannot run at all
 
 ```
 AssertionError: 'RECONNECT DONE' never appeared -- reconnect simulation
@@ -36,7 +36,7 @@ didn't fire
 FAIL on a stalled render count, the normal shape of this bug. Instead the
 reconnect simulation never even started. Investigated rather than assumed
 the test was broken: `-replay` and everything `UX_RECONNECT_MODE` depends
-on is introduced by `43bb141`, a *later* commit than `643fac1` (the
+on is introduced by `01cc470`, a *later* commit than `aaad0bb` (the
 `skip_video_rebuild` fix this test targets) -- on this branch's clean,
 non-repeating history, the capture/replay harness was only built once, for
 a *different* purpose (A/V-sync testing), well after the reconnect bug it
@@ -47,7 +47,7 @@ window where the fix is absent AND the tooling to demonstrate its absence
 is present. No before-picture exists because no before-run produced any
 data at all.
 
-## After (`43bb141`) — PASS
+## After (`01cc470`) — PASS
 
 ![video-reconnect after](img/video_reconnect_after.png)
 

@@ -26,6 +26,11 @@ docker run --rm \
       test_raop_conn_policy.c ../lib/raop_conn_policy.c
     /tmp/test_raop_conn_policy
 
+    gcc -O0 -g -Wall -Wextra -Werror \
+      -o /tmp/test_netlink_addr_watch \
+      test_netlink_addr_watch.c ../lib/netlink_addr_watch.c
+    /tmp/test_netlink_addr_watch
+
     # Pulls in renderers/audio_renderer.c directly (file-static symbols) --
     # needs GStreamer + the app plugin'"'"'s headers (gst/app/gstappsrc.h).
     gcc -O0 -g -Wall \

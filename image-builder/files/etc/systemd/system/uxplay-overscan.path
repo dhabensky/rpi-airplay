@@ -1,0 +1,8 @@
+[Unit]
+Description=Watch /etc/default/uxplay for overscan config changes
+
+[Path]
+PathModified=/etc/default/uxplay
+
+[Install]
+WantedBy=multi-user.target

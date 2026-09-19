@@ -283,6 +283,7 @@ echo "==> Installing image-builder/files/ content (systemd unit, udev rule, modu
 cp -a "$provfiles/etc/." "$work/etc/"
 install -m 0755 "$provfiles/usr/local/bin/uxrun" "$work/usr/local/bin/uxrun"
 install -m 0755 "$provfiles/usr/local/bin/zero-fb0" "$work/usr/local/bin/zero-fb0"
+install -m 0755 "$provfiles/usr/local/bin/uxplay-overscan-sync" "$work/usr/local/bin/uxplay-overscan-sync"
 
 if [ -n "$personal_env" ] && [ -f "$personal_env" ]; then
   # shellcheck disable=SC1090
@@ -292,8 +293,9 @@ if [ -n "$personal_env" ] && [ -f "$personal_env" ]; then
     cat > "$work/etc/default/uxplay" <<EOF
 # Pixels to inset the rendered picture on each edge, compensating for this
 # TV's own overscan/zoom cropping the outer edges of the HDMI signal.
-# Applied live -- edit and save, no restart or reconnect needed (uxplay
-# watches this file). Baked in at image-build time from personal.env.
+# Applied live -- edit and save, no restart or reconnect needed
+# (uxplay-overscan.path watches this file). Baked in at image-build time
+# from personal.env.
 UXPLAY_OVERSCAN_LEFT=${OVERSCAN_LEFT:-0}
 UXPLAY_OVERSCAN_RIGHT=${OVERSCAN_RIGHT:-0}
 UXPLAY_OVERSCAN_TOP=${OVERSCAN_TOP:-0}
@@ -319,11 +321,14 @@ chroot "$work" useradd -r -M -s /usr/sbin/nologin -G audio,video,render,input ux
 # resolve it.
 chroot "$work" install -d -o uxplay -g uxplay -m 0755 /home/uxplay
 
-echo "==> Enabling uxplay.service (direct symlink -- the unit's only [Install]"
-echo "    key is WantedBy=multi-user.target, no systemctl/live daemon needed)"
+echo "==> Enabling uxplay.service and uxplay-overscan.path (direct symlinks --"
+echo "    both units' only [Install] key is WantedBy=multi-user.target, no"
+echo "    systemctl/live daemon needed)"
 mkdir -p "$work/etc/systemd/system/multi-user.target.wants"
 ln -sf /etc/systemd/system/uxplay.service \
   "$work/etc/systemd/system/multi-user.target.wants/uxplay.service"
+ln -sf /etc/systemd/system/uxplay-overscan.path \
+  "$work/etc/systemd/system/multi-user.target.wants/uxplay-overscan.path"
 
 echo "==> Enabling dietpi-skip-firstrun.service (without this, every"
 echo "    interactive SSH login on a real boot synchronously runs the real"

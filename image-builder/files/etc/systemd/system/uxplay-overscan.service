@@ -1,0 +1,6 @@
+[Unit]
+Description=Push /etc/default/uxplay overscan config to uxplay's live-update FIFO
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/uxplay-overscan-sync

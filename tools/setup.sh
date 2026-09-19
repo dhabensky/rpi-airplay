@@ -123,6 +123,14 @@ if [ ! -f /etc/default/uxplay ]; then
 fi
 systemctl enable uxplay.service
 
+echo "==> Installing the overscan live-update watcher (pushes /etc/default/"
+echo "    uxplay's values through uxplay's -ofifo whenever the file changes)"
+install -m 0755 ../image-builder/files/usr/local/bin/uxplay-overscan-sync /usr/local/bin/uxplay-overscan-sync
+install -m 0644 ../image-builder/files/etc/systemd/system/uxplay-overscan.path /etc/systemd/system/uxplay-overscan.path
+install -m 0644 ../image-builder/files/etc/systemd/system/uxplay-overscan.service /etc/systemd/system/uxplay-overscan.service
+systemctl daemon-reload
+systemctl enable --now uxplay-overscan.path
+
 echo "==> Installing the uxrun A/V-sync tuning helper"
 install -m 0755 ../image-builder/files/usr/local/bin/uxrun /usr/local/bin/uxrun
 

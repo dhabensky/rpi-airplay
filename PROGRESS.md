@@ -2006,3 +2006,72 @@ attempted-before commit, real PASS everywhere else expected to pass) --
 not assumed identical just because the underlying code didn't change.
 All `tools/pytest/reports/*.md` hashes bulk-updated to match, pictures
 re-rendered from the fresh runs. Force-pushed `dhabensky-clean-2` again.
+
+## 2026-09-19 (later): a second review round, 7 more findings, and a third rebuild
+
+User reviewed 7 more commits with real architectural objections. Investigated
+each on real hardware before deciding, rather than patching superficially:
+
+- **DHCP-renewal fix** (`71b0522`): the 5-minute unconditional poll became a
+  genuine event-driven fix -- a `NETLINK_ROUTE` socket subscribed to
+  `RTMGRP_IPV4_IFADDR`/`RTMGRP_IPV6_IFADDR`, integrated into the GMainLoop,
+  falling back to polling only if the kernel lacks netlink. Added a real unit
+  test (`test_netlink_addr_watch.c`) and confirmed end-to-end on the Pi: an
+  `ip addr add/del` on `lo` reliably triggered `dnssd_reregister()` through the
+  real callback, immediately.
+- **`skip_video_rebuild`** (`643fac1`): forced the full teardown+rebuild path on
+  real hardware, 4 clean runs -- did NOT reproduce a permanent decoder freeze,
+  contradicting the original commit message's firmware-wedge claim. Found the
+  actual, measurable reason to keep it instead: ~5.2s of frozen video per
+  reconnect with a full rebuild vs. ~100ms with the fast path (real timestamps
+  from kmssink's own render log). Comment corrected to the verified latency
+  cause instead of the unverified wedge theory; behavior unchanged.
+- **`.gitignore`** (`43bb141`): `build*/` was genuinely redundant (`build/`
+  already covers everything either build path produces) -- removed. Also
+  simplified `-replay`'s reconnect simulation from a 4-mode
+  (`full`/`stop`/`none`/`real`) shape down to always driving the one mode that
+  matters (the real production path), and dropped the unused `UX_VDELAY_MS`
+  jitter knob -- neither was ever exercised by the automated test suite.
+- **Overscan** (`b5a9f7d`): redesigned so UxPlay owns only the mechanical
+  part. `video_renderer_set_overscan(left, right, top, bottom, screen_w,
+  screen_h)` just sets `render-rectangle`; no file I/O, no `/etc/default/uxplay`
+  knowledge left in the library. `-overscan l:r:t:b` seeds the initial value,
+  `-ofifo <path>` opens a FIFO for a live update at any time. The
+  `/etc/default/uxplay` format, reading it, and watching it for edits all moved
+  to this repo: `image-builder/files/usr/local/bin/uxplay-overscan-sync` +
+  `uxplay-overscan.path`/`.service` (a systemd path unit, no polling daemon).
+  Verified the whole chain end-to-end on the Pi, both the `ExecStartPost`
+  initial seed and a live edit to `/etc/default/uxplay` triggering the path
+  unit and landing in the running process within ~1s.
+- **Audio thread-race** (`1abbb8e`): the deferred-execution pattern itself was
+  sound (idiomatic GLib "marshal onto the owning thread"), but the two
+  near-identical public functions merged into one --
+  `audio_renderer_start_deferred(compression_type, force_restart)` -- trimming
+  the public API surface growth from 2 functions to 1.
+- **`-norenderhealthcheck`** (`3af5679`): renamed to `-norenderhealth`, matching
+  the project's terse flag-naming convention.
+- **`extern "C"` in `fairplay.h`** (`e645717`): confirmed, by grepping every
+  header in the codebase, that this is the *existing, pervasive* convention
+  (every C header in `lib/`/`renderers/` already does this) -- the review
+  comment calling it a style violation was factually wrong, no change needed.
+  Moved the whole `synthetic-client.cpp` commit from the tail of history to
+  right after the base commit instead, since it's broadly useful,
+  library-adjacent tooling with zero dependency on anything later (confirmed:
+  cherry-picks cleanly first, before any other fork commit).
+- **capture/replay vs. synthetic-client redundancy**: confirmed they are NOT
+  redundant -- `synthetic-client` drives the real RTSP/RTP protocol layer
+  (audio-only, no GPU needed); `-capture`/`-replay` exercises the real video
+  renderer pipeline offline (no network layer). Real dead scaffolding *was*
+  found and removed as part of the `.gitignore` commit above (3 of 4
+  `UX_RECONNECT_MODE` values, `UX_VDELAY_MS`), satisfying the "reduce test
+  code" request without losing real coverage.
+
+Rebuilt all 24 commits again from `df67c212a4`, reordering `synthetic-client`
+to the front and folding all 6 code fixes into their original commits (not
+appended at the tip), verifying the build after every single edit. Full
+re-verification: Docker build + both unit tests (now 3, with the new netlink
+test) + all 4 Docker-only pytest tests + all 4 Pi-hardware pytest tests (13
+cases total) -- all green against the final reconstructed hashes. All
+`tools/pytest/reports/*.md` hashes bulk-updated (every one of the 24 commits
+got a new hash from the reordering, not just the 6 that changed content).
+Force-pushed `dhabensky-clean-2` again.

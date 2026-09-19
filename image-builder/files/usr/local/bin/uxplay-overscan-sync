@@ -1,0 +1,29 @@
+#!/bin/bash
+# Reads UXPLAY_OVERSCAN_* from /etc/default/uxplay and pushes it through
+# uxplay's live-update FIFO (-ofifo). Run once right after uxplay.service
+# starts (seeds the initial value) and again by uxplay-overscan.path on
+# every edit to the config file -- uxplay itself owns none of this file's
+# format or location, only applying the 4 numbers it's given.
+set -eu
+
+FIFO=/run/uxplay/overscan.fifo
+CONF=/etc/default/uxplay
+
+# uxplay creates the FIFO a few seconds into its own startup; wait for it
+# rather than failing a fresh boot's ExecStartPost race.
+for _ in $(seq 1 150); do
+  [ -p "$FIFO" ] && break
+  sleep 0.2
+done
+[ -p "$FIFO" ] || exit 0
+
+UXPLAY_OVERSCAN_LEFT=0
+UXPLAY_OVERSCAN_RIGHT=0
+UXPLAY_OVERSCAN_TOP=0
+UXPLAY_OVERSCAN_BOTTOM=0
+if [ -f "$CONF" ]; then
+  # shellcheck disable=SC1090
+  . "$CONF"
+fi
+
+echo "$UXPLAY_OVERSCAN_LEFT $UXPLAY_OVERSCAN_RIGHT $UXPLAY_OVERSCAN_TOP $UXPLAY_OVERSCAN_BOTTOM" > "$FIFO"
