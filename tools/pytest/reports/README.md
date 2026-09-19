@@ -34,12 +34,12 @@ See each `tools/pytest/reports/<module>.md`.
   work, out of scope here.
 - **`test_video_reconnect.py`** — no commit on `dhabensky-clean-2` can
   serve as a valid "before" state for this test at all: `-replay` (this
-  test's own mechanism) is introduced by a later commit (`840e0a5`) than
-  the `skip_video_rebuild` fix it would otherwise verify (`0871f22`), and
+  test's own mechanism) is introduced by a later commit (`43bb141`) than
+  the `skip_video_rebuild` fix it would otherwise verify (`643fac1`), and
   this branch's history was deliberately built to never carry the bug
   forward into a later commit for tooling to reveal. Confirmed by actually
   running it, not assumed. Real, positive confirmation obtained instead:
-  at `840e0a5` (the earliest commit where `-replay` exists at all),
+  at `43bb141` (the earliest commit where `-replay` exists at all),
   `skip_video_rebuild=1` and rendering is continuous through a simulated
   reconnect (245 renders, no plateau). Rework candidate: would need a
   reconnect-triggering mechanism that exists from the branch's base

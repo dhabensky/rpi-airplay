@@ -9,16 +9,16 @@ synthetic).
 
 ## Revisions tested
 
-- **Before:** UxPlay `dhabensky-clean-2` commit `51c6fed` (the commit right
+- **Before:** UxPlay `dhabensky-clean-2` commit `9bbe53a` (the commit right
   before the render-health watchdog).
-- **After:** UxPlay `dhabensky-clean-2` commit `bf5247d` ("Add a
+- **After:** UxPlay `dhabensky-clean-2` commit `3af5679` ("Add a
   render-health watchdog: auto-recover from a decode-without-render
   collapse").
 
 Reproduce: `tools/pytest/.venv/bin/pytest tools/pytest/test_render_health.py
---uxplay-ref 51c6fed` vs `--uxplay-ref bf5247d`.
+--uxplay-ref 9bbe53a` vs `--uxplay-ref 3af5679`.
 
-## Before (`51c6fed`) — all 10 captures PASS
+## Before (`9bbe53a`) — all 10 captures PASS
 
 ```
 10 passed in 276.32s
@@ -39,7 +39,7 @@ that bypasses `lib/httpd.c`/`lib/raop.c` entirely, and the actual bug
 race in exactly that real-time RTSP/RTP layer. All 10 captures pass
 identically at the pre-fix commit.
 
-## After (`bf5247d`) — all 10 captures PASS
+## After (`3af5679`) — all 10 captures PASS
 
 ![render-health after](img/render_health_after.png)
 

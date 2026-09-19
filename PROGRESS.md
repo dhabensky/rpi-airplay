@@ -1964,3 +1964,45 @@ kept as legitimate coverage. All `tools/pytest/reports/*.md` and
 pushed to the `dhabensky` remote (force-pushed once, after the
 diagnostic-counter fix required reconstructing 7 commits on top of an
 inserted one).
+
+## 2026-09-19: a real code review of `dhabensky-clean-2`, and a second rebuild
+
+User reviewed 9 of the 24 commits by hand and flagged real problems, not
+style nits: comments running 4-27 lines when 1-3 was the actual rule
+(confirmed across nearly every commit once audited properly, not just
+the 9 flagged); `bdfd7ee`'s blanking fix genuinely didn't fix the bug it
+claimed to for the primary "Stop Sharing" scenario (`skip_video_rebuild`,
+added by a *later* commit, bypasses `video_renderer_destroy()` entirely
+for that path -- confirmed on real Pi hardware via `-replay
+UX_RECONNECT_MODE=real`, not just reasoned about); `9a4c484`'s `volatile
+gint` was inconsistent with the `g_atomic_int`-only convention a later
+commit in the same file already established; `7e18bda` hardcoded a
+Pi-specific 300ms audio-queue tuning value into the general UxPlay fork.
+
+User's calls: delete `bdfd7ee` outright (the partial coverage it had for
+HLS/preserve_connections/silent-timeout paths wasn't worth keeping a
+broken claim for), and replace the hardcoded queue cap with a new
+`-aqueuems` CLI flag (default 0 = unbounded, matching video) -- the
+Pi-specific 300ms value moves to this repo's own deploy config, not
+hardcoded into the fork.
+
+Rebuilt all 24 commits from `df67c212a4` again (23 kept, `bdfd7ee`
+dropped), this time trimming every comment to 1-3 lines and every commit
+message's Fix section down from full technical narratives to the
+essentials, fixing the `volatile` inconsistency, and landing the new
+CLI flag. Caught one real intermediate-history bug along the way while
+re-running the per-commit build+test discipline: the diagnostic
+instrumentation commit (`319d264`, A/V sync probe) referenced
+`install_av_sync_probe` from `audio_renderer.c` without the test stub
+that satisfies it existing yet at that point -- unit tests genuinely
+failed if checked out at that exact commit, even though the final tip
+was fine. Fixed by adding the stub at the commit that first creates the
+dependency, not the later one that happened to add it originally.
+
+Full re-verification after rebuild: Docker build + both unit tests +
+all 4 Docker-only pytest tests, then all 3 Pi-hardware pytest tests
+re-run fresh at the new commit hashes (real FAIL at `test_video_reconnect.py`'s
+attempted-before commit, real PASS everywhere else expected to pass) --
+not assumed identical just because the underlying code didn't change.
+All `tools/pytest/reports/*.md` hashes bulk-updated to match, pictures
+re-rendered from the fresh runs. Force-pushed `dhabensky-clean-2` again.

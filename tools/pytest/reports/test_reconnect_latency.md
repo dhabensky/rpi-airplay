@@ -13,7 +13,7 @@ more cycles than one real capture shows"), always run against whatever's
 current. There is no fix commit to bisect against and no meaningful
 "before" state to demonstrate — flagged as such rather than forcing a
 before/after narrative that doesn't fit. Run once, for real, against
-current `dhabensky-clean-2` tip (`92b0315`) to confirm its numbers.
+current `dhabensky-clean-2` tip (`e645717`) to confirm its numbers.
 
 ## Result — both PASS, current tip
 

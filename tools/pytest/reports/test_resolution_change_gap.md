@@ -11,13 +11,13 @@ fixture, a 1s trim of a real capture).
 ## Revisions tested
 
 Same pair as `test_render_health.py` (same underlying watchdog fix, same
-`-replay` mechanism): **before** `51c6fed`, **after** `bf5247d`.
+`-replay` mechanism): **before** `9bbe53a`, **after** `3af5679`.
 
 Reproduce: `tools/pytest/.venv/bin/pytest
-tools/pytest/test_resolution_change_gap.py --uxplay-ref 51c6fed` vs
-`--uxplay-ref bf5247d`.
+tools/pytest/test_resolution_change_gap.py --uxplay-ref 9bbe53a` vs
+`--uxplay-ref 3af5679`.
 
-## Before (`51c6fed`) — PASS
+## Before (`9bbe53a`) — PASS
 
 ```
 1 passed in 15.25s
@@ -28,7 +28,7 @@ change` fires right after `Handling frame 6`, then
 `gst_kms_sink_import_dmabuf` fires ~52ms later -- render resumed with
 gap=1 frame, comfortably under `MAX_GAP_FRAMES=10`.
 
-## After (`bf5247d`) — PASS
+## After (`3af5679`) — PASS
 
 ![resolution-change-gap after](img/resolution_change_gap_after.png)
 
