@@ -38,4 +38,12 @@ docker run --rm \
       test_bus_callback_null_renderer.c \
       $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-app-1.0)
     /tmp/test_bus_callback_null_renderer
+
+    # Pulls in renderers/video_renderer.c directly (file-static symbols) --
+    # needs gstreamer-video-1.0 for gst/video/videooverlay.h etc.
+    gcc -O0 -g -Wall \
+      -o /tmp/test_release_display_epoch_guard \
+      test_release_display_epoch_guard.c \
+      $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0)
+    /tmp/test_release_display_epoch_guard
   '

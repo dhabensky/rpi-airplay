@@ -8,3 +8,8 @@ UXPLAY_OVERSCAN_LEFT=0
 UXPLAY_OVERSCAN_RIGHT=0
 UXPLAY_OVERSCAN_TOP=0
 UXPLAY_OVERSCAN_BOTTOM=0
+
+# AirPlay device name -- shown to clients and on the idle menu screen.
+# Read independently by uxplay.service (-n "${UXPLAY_DISPLAY_NAME}") and
+# uxplay-menu-render; neither bakes the other's format/location in.
+UXPLAY_DISPLAY_NAME="Living Room TV"

@@ -1,0 +1,8 @@
+[Unit]
+Description=Watch /etc/default/uxplay for display-name config changes
+
+[Path]
+PathModified=/etc/default/uxplay
+
+[Install]
+WantedBy=multi-user.target

@@ -37,6 +37,7 @@ RUN apt-get -o Acquire::Check-Valid-Until=false install -y --no-install-recommen
     libavahi-compat-libdnssd-dev \
     gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-alsa \
+    gstreamer1.0-x \
     gstreamer1.0-tools \
     e2fsprogs dosfstools mtools fdisk \
     binutils libdrm-dev \

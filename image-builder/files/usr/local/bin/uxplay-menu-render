@@ -1,0 +1,31 @@
+#!/bin/bash
+# Looks up device name/IP/WiFi SSID and renders the idle menu screen via
+# menu-render. menu-render itself knows nothing about where this text
+# comes from -- that lookup lives here, not in the C tool. Run once after
+# uxplay.service starts, again on every /etc/default/uxplay edit
+# (uxplay-menu-render.path), and periodically (uxplay-menu-render.timer)
+# to keep IP/SSID fresh.
+set -eu
+
+CONF=/etc/default/uxplay
+UXPLAY_DISPLAY_NAME="Living Room TV"
+if [ -f "$CONF" ]; then
+  # shellcheck disable=SC1090
+  . "$CONF"
+fi
+
+ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+[ -n "$ip" ] || ip="(no IP yet)"
+
+ssid="$(wpa_cli -i wlan0 status 2>/dev/null | grep '^ssid=' | cut -d= -f2-)"
+[ -n "$ssid" ] || ssid="(not connected)"
+
+# textoverlay center-crops top+bottom past ~5/6 of frame height at this
+# font size instead of shrinking (confirmed on real hardware: an 8-line
+# text lost its first line) -- stay at 4 source lines (5 wrapped).
+text="$UXPLAY_DISPLAY_NAME
+IP: $ip
+WiFi: $ssid
+Control Center -> Screen Mirroring"
+
+exec /usr/local/bin/menu-render "$text"

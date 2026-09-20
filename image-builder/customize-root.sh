@@ -22,14 +22,15 @@
 # the host anymore -- inspect it via `docker run -v <volume>:/x ... find/stat`.)
 #
 # Usage: image-builder/customize-root.sh <root-dir> <vendor-gstreamer-dir> \
-#          <uxplay-debug-binary> <files-dir> [personal-env-file]
+#          <uxplay-debug-binary> <menu-render-binary> <files-dir> [personal-env-file]
 set -euo pipefail
 
-work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <files-dir> [personal-env-file]}"
+work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <menu-render-binary> <files-dir> [personal-env-file]}"
 vendor="${2:?}"
 uxplay_bin="${3:?}"
-provfiles="${4:?}"
-personal_env="${5:-}"
+menu_render_bin="${4:?}"
+provfiles="${5:?}"
+personal_env="${6:-}"
 
 # The Makefile mounts a persistent named volume directly at
 # $work/var/cache/apt/archives (via an extra `-v` flag on the `docker run`
@@ -279,17 +280,24 @@ install -m 0644 -t "$work/usr/lib/aarch64-linux-gnu" "$vendor/libs/"*
 echo "==> Installing uxplay_debug binary"
 install -m 0755 "$uxplay_bin" "$work/usr/local/bin/uxplay_debug"
 
-echo "==> Installing image-builder/files/ content (systemd unit, udev rule, modules-load, uxrun, zero-fb0)"
+echo "==> Installing menu-render binary"
+install -m 0755 "$menu_render_bin" "$work/usr/local/bin/menu-render"
+
+echo "==> Installing image-builder/files/ content (systemd units, udev rule, modules-load, uxrun, zero-fb0, uxplay-menu-render)"
 cp -a "$provfiles/etc/." "$work/etc/"
 install -m 0755 "$provfiles/usr/local/bin/uxrun" "$work/usr/local/bin/uxrun"
 install -m 0755 "$provfiles/usr/local/bin/zero-fb0" "$work/usr/local/bin/zero-fb0"
 install -m 0755 "$provfiles/usr/local/bin/uxplay-overscan-sync" "$work/usr/local/bin/uxplay-overscan-sync"
+install -m 0755 "$provfiles/usr/local/bin/uxplay-menu-render" "$work/usr/local/bin/uxplay-menu-render"
 
 if [ -n "$personal_env" ] && [ -f "$personal_env" ]; then
   # shellcheck disable=SC1090
   . "$personal_env"
-  if [ -n "${OVERSCAN_LEFT:-}" ] || [ -n "${OVERSCAN_RIGHT:-}" ] || [ -n "${OVERSCAN_TOP:-}" ] || [ -n "${OVERSCAN_BOTTOM:-}" ]; then
-    echo "==> Baking in overscan compensation from personal.env"
+  if [ -n "${OVERSCAN_LEFT:-}" ] || [ -n "${OVERSCAN_RIGHT:-}" ] || [ -n "${OVERSCAN_TOP:-}" ] || [ -n "${OVERSCAN_BOTTOM:-}" ] || [ -n "${DISPLAY_NAME:-}" ]; then
+    echo "==> Baking in overscan compensation / display name from personal.env"
+    # Default sourced from the checked-in file (single source of truth for
+    # "Living Room TV") rather than a second hardcoded copy here.
+    default_display_name="$(. "$provfiles/etc/default/uxplay"; echo "$UXPLAY_DISPLAY_NAME")"
     cat > "$work/etc/default/uxplay" <<EOF
 # Pixels to inset the rendered picture on each edge, compensating for this
 # TV's own overscan/zoom cropping the outer edges of the HDMI signal.
@@ -300,6 +308,10 @@ UXPLAY_OVERSCAN_LEFT=${OVERSCAN_LEFT:-0}
 UXPLAY_OVERSCAN_RIGHT=${OVERSCAN_RIGHT:-0}
 UXPLAY_OVERSCAN_TOP=${OVERSCAN_TOP:-0}
 UXPLAY_OVERSCAN_BOTTOM=${OVERSCAN_BOTTOM:-0}
+
+# AirPlay device name -- shown to clients and on the idle menu screen.
+# Baked in at image-build time from personal.env.
+UXPLAY_DISPLAY_NAME="${DISPLAY_NAME:-$default_display_name}"
 EOF
   fi
 fi
@@ -321,14 +333,26 @@ chroot "$work" useradd -r -M -s /usr/sbin/nologin -G audio,video,render,input ux
 # resolve it.
 chroot "$work" install -d -o uxplay -g uxplay -m 0755 /home/uxplay
 
-echo "==> Enabling uxplay.service and uxplay-overscan.path (direct symlinks --"
-echo "    both units' only [Install] key is WantedBy=multi-user.target, no"
-echo "    systemctl/live daemon needed)"
+echo "==> Enabling uxplay.service, uxplay-overscan.path, zero-fb0-late.service,"
+echo "    and the uxplay-menu-render timer/path (direct symlinks -- each of"
+echo "    these units' only [Install] key is WantedBy=multi-user.target, no"
+echo "    systemctl/live daemon needed). uxplay-menu-render.service itself has"
+echo "    no [Install] section -- enabling it directly here would recreate a"
+echo "    real ordering cycle with zero-fb0-late.service (confirmed on real"
+echo "    hardware: systemd silently deletes one of the two jobs to break it,"
+echo "    so zero-fb0-late never ran). It's pulled in instead by"
+echo "    zero-fb0-late.service's own Wants=, and by the timer/path below."
 mkdir -p "$work/etc/systemd/system/multi-user.target.wants"
 ln -sf /etc/systemd/system/uxplay.service \
   "$work/etc/systemd/system/multi-user.target.wants/uxplay.service"
 ln -sf /etc/systemd/system/uxplay-overscan.path \
   "$work/etc/systemd/system/multi-user.target.wants/uxplay-overscan.path"
+ln -sf /etc/systemd/system/zero-fb0-late.service \
+  "$work/etc/systemd/system/multi-user.target.wants/zero-fb0-late.service"
+ln -sf /etc/systemd/system/uxplay-menu-render.timer \
+  "$work/etc/systemd/system/multi-user.target.wants/uxplay-menu-render.timer"
+ln -sf /etc/systemd/system/uxplay-menu-render.path \
+  "$work/etc/systemd/system/multi-user.target.wants/uxplay-menu-render.path"
 
 echo "==> Enabling dietpi-skip-firstrun.service (without this, every"
 echo "    interactive SSH login on a real boot synchronously runs the real"

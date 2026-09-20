@@ -1,0 +1,7 @@
+[Unit]
+Description=Render the idle menu screen (name/IP/WiFi/instructions) to /dev/fb0
+After=uxplay.service zero-fb0-late.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/uxplay-menu-render

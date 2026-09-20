@@ -12,6 +12,7 @@ libgstdebug.so          # provides capssetter, used by UxPlay's own pipeline con
 libgstkms.so            # kmssink (video output, force-modesetting=true)
 libgstlevel.so          # level (audio pipeline element UxPlay inserts for metering)
 libgstlibav.so          # avdec_h264/avdec_aac software fallback decoders
+libgstpango.so          # textoverlay (uxplay-menu-render's idle menu screen text)
 libgstplayback.so       # playbin/decodebin -- pulled in by UxPlay even when not the active path
 libgsttypefindfunctions.so  # format detection, required by decodebin/playbin
 libgstvideo4linux2.so   # v4l2h264dec (hardware H.264 decode, -vd v4l2h264dec)

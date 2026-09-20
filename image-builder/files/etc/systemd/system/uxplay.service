@@ -13,8 +13,9 @@ Environment=GST_REGISTRY=/home/uxplay/.cache/gstreamer-1.0/registry.bin
 Type=simple
 User=uxplay
 RuntimeDirectory=uxplay
+EnvironmentFile=-/etc/default/uxplay
 ExecStartPre=/usr/local/bin/zero-fb0
-ExecStart=/usr/bin/stdbuf -oL -eL /usr/local/bin/uxplay_debug -vd v4l2h264dec -vc identity -srgb no -n "Living Room TV" -reset 60 -vs "kmssink qos=false ts-offset=300000000" -as "alsasink device=plughw:vc4hdmi,0" -ofifo /run/uxplay/overscan.fifo
+ExecStart=/usr/bin/stdbuf -oL -eL /usr/local/bin/uxplay_debug -vd v4l2h264dec -vc identity -srgb no -n "${UXPLAY_DISPLAY_NAME}" -reset 60 -vs "kmssink qos=false ts-offset=300000000" -as "alsasink device=plughw:vc4hdmi,0" -ofifo /run/uxplay/overscan.fifo
 ExecStartPost=/usr/local/bin/uxplay-overscan-sync
 Restart=on-failure
 RestartSec=3
