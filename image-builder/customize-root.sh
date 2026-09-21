@@ -283,12 +283,13 @@ install -m 0755 "$uxplay_bin" "$work/usr/local/bin/uxplay_debug"
 echo "==> Installing menu-render binary"
 install -m 0755 "$menu_render_bin" "$work/usr/local/bin/menu-render"
 
-echo "==> Installing image-builder/files/ content (systemd units, udev rule, modules-load, uxrun, zero-fb0, uxplay-menu-render)"
+echo "==> Installing image-builder/files/ content (systemd units, udev rule, modules-load, uxrun, zero-fb0, uxplay-menu-render, uxplay-menu-render-watch)"
 cp -a "$provfiles/etc/." "$work/etc/"
 install -m 0755 "$provfiles/usr/local/bin/uxrun" "$work/usr/local/bin/uxrun"
 install -m 0755 "$provfiles/usr/local/bin/zero-fb0" "$work/usr/local/bin/zero-fb0"
 install -m 0755 "$provfiles/usr/local/bin/uxplay-overscan-sync" "$work/usr/local/bin/uxplay-overscan-sync"
 install -m 0755 "$provfiles/usr/local/bin/uxplay-menu-render" "$work/usr/local/bin/uxplay-menu-render"
+install -m 0755 "$provfiles/usr/local/bin/uxplay-menu-render-watch" "$work/usr/local/bin/uxplay-menu-render-watch"
 
 if [ -n "$personal_env" ] && [ -f "$personal_env" ]; then
   # shellcheck disable=SC1090
@@ -334,14 +335,15 @@ chroot "$work" useradd -r -M -s /usr/sbin/nologin -G audio,video,render,input ux
 chroot "$work" install -d -o uxplay -g uxplay -m 0755 /home/uxplay
 
 echo "==> Enabling uxplay.service, uxplay-overscan.path, zero-fb0-late.service,"
-echo "    and the uxplay-menu-render timer/path (direct symlinks -- each of"
-echo "    these units' only [Install] key is WantedBy=multi-user.target, no"
-echo "    systemctl/live daemon needed). uxplay-menu-render.service itself has"
-echo "    no [Install] section -- enabling it directly here would recreate a"
-echo "    real ordering cycle with zero-fb0-late.service (confirmed on real"
-echo "    hardware: systemd silently deletes one of the two jobs to break it,"
-echo "    so zero-fb0-late never ran). It's pulled in instead by"
-echo "    zero-fb0-late.service's own Wants=, and by the timer/path below."
+echo "    the uxplay-menu-render timer/path, and uxplay-menu-render-watch"
+echo "    (direct symlinks -- each of these units' only [Install] key is"
+echo "    WantedBy=multi-user.target, no systemctl/live daemon needed)."
+echo "    uxplay-menu-render.service itself has no [Install] section --"
+echo "    enabling it directly here would recreate a real ordering cycle"
+echo "    with zero-fb0-late.service (confirmed on real hardware: systemd"
+echo "    silently deletes one of the two jobs to break it, so zero-fb0-late"
+echo "    never ran). It's pulled in instead by zero-fb0-late.service's own"
+echo "    Wants=, and by the timer/path below."
 mkdir -p "$work/etc/systemd/system/multi-user.target.wants"
 ln -sf /etc/systemd/system/uxplay.service \
   "$work/etc/systemd/system/multi-user.target.wants/uxplay.service"
@@ -353,6 +355,8 @@ ln -sf /etc/systemd/system/uxplay-menu-render.timer \
   "$work/etc/systemd/system/multi-user.target.wants/uxplay-menu-render.timer"
 ln -sf /etc/systemd/system/uxplay-menu-render.path \
   "$work/etc/systemd/system/multi-user.target.wants/uxplay-menu-render.path"
+ln -sf /etc/systemd/system/uxplay-menu-render-watch.service \
+  "$work/etc/systemd/system/multi-user.target.wants/uxplay-menu-render-watch.service"
 
 echo "==> Enabling dietpi-skip-firstrun.service (without this, every"
 echo "    interactive SSH login on a real boot synchronously runs the real"
