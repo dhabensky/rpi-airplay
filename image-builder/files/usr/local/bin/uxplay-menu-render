@@ -7,6 +7,13 @@
 # to keep IP/SSID fresh.
 set -eu
 
+# Skip while a client holds an active session -- repainting would overwrite
+# the connection-start blank and let the menu bleed into pillarbox margins.
+# ESTAB only: a lingering CLOSE-WAIT/FIN-WAIT socket is not an active session.
+if ss -tnp 2>/dev/null | awk '$1 == "ESTAB"' | grep -q 'uxplay_debug'; then
+  exit 0
+fi
+
 CONF=/etc/default/uxplay
 UXPLAY_DISPLAY_NAME="Living Room TV"
 if [ -f "$CONF" ]; then
