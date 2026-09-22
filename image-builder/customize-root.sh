@@ -22,15 +22,17 @@
 # the host anymore -- inspect it via `docker run -v <volume>:/x ... find/stat`.)
 #
 # Usage: image-builder/customize-root.sh <root-dir> <vendor-gstreamer-dir> \
-#          <uxplay-debug-binary> <menu-render-binary> <files-dir> [personal-env-file]
+#          <uxplay-debug-binary> <menu-render-binary> <log-ts-binary> \
+#          <files-dir> [personal-env-file]
 set -euo pipefail
 
-work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <menu-render-binary> <files-dir> [personal-env-file]}"
+work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <menu-render-binary> <log-ts-binary> <files-dir> [personal-env-file]}"
 vendor="${2:?}"
 uxplay_bin="${3:?}"
 menu_render_bin="${4:?}"
-provfiles="${5:?}"
-personal_env="${6:-}"
+log_ts_bin="${5:?}"
+provfiles="${6:?}"
+personal_env="${7:-}"
 
 # The Makefile mounts a persistent named volume directly at
 # $work/var/cache/apt/archives (via an extra `-v` flag on the `docker run`
@@ -282,6 +284,9 @@ install -m 0755 "$uxplay_bin" "$work/usr/local/bin/uxplay_debug"
 
 echo "==> Installing menu-render binary"
 install -m 0755 "$menu_render_bin" "$work/usr/local/bin/menu-render"
+
+echo "==> Installing log-ts binary (uxplay.service's ExecStart wrapper/timestamper)"
+install -m 0755 "$log_ts_bin" "$work/usr/local/bin/log-ts"
 
 echo "==> Installing image-builder/files/ content (systemd units, udev rule, modules-load, uxrun, zero-fb0, uxplay-menu-render, uxplay-menu-render-watch)"
 cp -a "$provfiles/etc/." "$work/etc/"

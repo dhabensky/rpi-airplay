@@ -5,7 +5,8 @@
 # recipes under tools/ and image-builder/ -- this file is the dependency
 # graph and the one documented entry point, not where the actual logic
 # lives.
-.PHONY: image image-xz uxplay vendor-gstreamer base-image golden-reference verify \
+.PHONY: image image-xz uxplay menu-render log-ts \
+        vendor-gstreamer base-image golden-reference verify \
         reproducible-check refresh-base-image refresh-apt-lists refresh-buildenv-apt-lists \
         test-boot test-resize clean
 
@@ -46,6 +47,7 @@ APT_CACHE_VOLUME := rpi-airplay-apt-cache
 image: build/rpi-airplay.img
 uxplay: build/uxplay_debug
 menu-render: build/bin/menu-render
+log-ts: build/bin/log-ts
 vendor-gstreamer: build/vendor-gstreamer/MANIFEST.md
 base-image: build/dietpi-base.img
 
@@ -64,6 +66,10 @@ build/uxplay_debug: Dockerfile $(shell find apt-lists -type f 2>/dev/null) $(she
 # --- menu-render binary (native arm64 via colima/Docker) ---
 build/bin/menu-render: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/menu-render.c tools/build-menu-render.sh
 	./tools/build-menu-render.sh build/bin
+
+# --- log-ts binary (native arm64 via colima/Docker) ---
+build/bin/log-ts: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/log-ts.c tools/build-log-ts.sh
+	./tools/build-log-ts.sh build/bin
 
 # --- vendor GStreamer closure ---
 # Depends on a golden-reference package manifest to compute the delta
@@ -88,7 +94,8 @@ build/dietpi-base.img: image-builder/BASE-IMAGE.env image-builder/fetch-base.sh
 # rebuild iteration for a file that's never actually downloaded/distributed
 # in that form. See `image-xz` below if a compressed copy is ever actually
 # needed (e.g. to archive/share a specific build).
-build/rpi-airplay.img: build/uxplay_debug build/bin/menu-render build/vendor-gstreamer/MANIFEST.md build/dietpi-base.img \
+build/rpi-airplay.img: build/uxplay_debug build/bin/menu-render build/bin/log-ts \
+                          build/vendor-gstreamer/MANIFEST.md build/dietpi-base.img \
                           $(shell find image-builder/files -type f) \
                           image-builder/extract-partitions.sh image-builder/customize-root.sh \
                           image-builder/apt-packages.lock $(shell find image-builder/apt-lists -type f) \
@@ -110,11 +117,12 @@ build/rpi-airplay.img: build/uxplay_debug build/bin/menu-render build/vendor-gst
 	  -v "$$PWD/build/vendor-gstreamer":/vendor:ro \
 	  -v "$$PWD/build/uxplay_debug":/uxplay_debug:ro \
 	  -v "$$PWD/build/bin/menu-render":/menu-render:ro \
+	  -v "$$PWD/build/bin/log-ts":/log-ts:ro \
 	  -v "$$PWD/image-builder/files":/provfiles:ro \
 	  -v "$$PWD/image-builder":/image-builder:ro \
 	  -v $(APT_CACHE_VOLUME):/rootdir/var/cache/apt/archives \
 	  $(if $(PERSONAL_ENV),-v "$$PWD/personal.env":/personal.env:ro,) \
-	  $(BUILDENV_TAG) bash /image-builder/customize-root.sh /rootdir /vendor /uxplay_debug /menu-render /provfiles $(if $(PERSONAL_ENV),/personal.env,)
+	  $(BUILDENV_TAG) bash /image-builder/customize-root.sh /rootdir /vendor /uxplay_debug /menu-render /log-ts /provfiles $(if $(PERSONAL_ENV),/personal.env,)
 	docker run --rm \
 	  -v $(DIETPI_BOOT_VOLUME):/dietpi-boot \
 	  -v "$$PWD/image-builder":/image-builder:ro \

@@ -150,10 +150,9 @@ sudo systemctl -M "$MACHINE" stop uxplay.service 2>&1 || true
 # ships with /var/lib/apt/lists/ deliberately emptied) and alone routinely
 # takes 30+ seconds -- uxplay_debug must still be alive (and thus still
 # mDNS-registered) by the time avahi-browse actually gets to run.
-# stdbuf -oL -eL matches uxplay.service's own ExecStart exactly -- without
-# it uxplay_debug's stdout is fully (not line-) buffered when not attached
-# to a real terminal, and journalctl below would see nothing but the
-# "Started ..." line until the process actually exits.
+# stdbuf -oL -eL as in uxplay.service's ExecStart: without it uxplay_debug's
+# stdout is fully (not line-) buffered when not attached to a real terminal,
+# and journalctl below would see nothing until the process actually exits.
 sudo systemd-run -M "$MACHINE" --unit=nspawn-test-uxplay-sw --collect \
   timeout 60 /usr/bin/stdbuf -oL -eL /usr/local/bin/uxplay_debug -avdec -vs fakesink -as fakesink -n "nspawn-test" \
   > /dev/null 2>&1 || true

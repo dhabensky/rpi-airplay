@@ -89,6 +89,17 @@ surviving seeks — does.
   software performance bug. Always check `vcgencmd get_throttled` /
   `measure_clock arm` first for any performance issue.
 
+## On-device diagnostics (shipped in the image, nothing to deploy)
+
+- **`/var/log/uxplay.log` lines are timestamped** — UTC ISO-8601 with
+  millisecond resolution (`2026-09-22T01:39:45.894 ...`). `uxplay.service`'s
+  main process is `/usr/local/bin/log-ts` (`tools/log-ts.c`), which runs
+  `uxplay_debug`, timestamps its merged stdout+stderr and exits the way it
+  did. One log file, prefixed at the source; consumers grep unanchored
+  patterns, so the prefix is transparent to them.
+
+`tcpdump` and `gdb` are installed too (`apt-packages.lock`).
+
 ## Building the uxplay_debug binary
 
 ```bash

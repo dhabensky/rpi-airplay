@@ -85,8 +85,8 @@ bug.
 
 `rtsp-capture.service` (`/usr/local/bin/rtsp-capture-arm` — re-reads
 uxplay's RTSP port on every start, since it is chosen at startup;
-rotates 3x20MB) and `uxplay-ts.service`
-(`/usr/local/bin/uxplay-log-ts` — timestamps every log line into
-`/var/log/uxplay-ts.log`, because `/var/log/uxplay.log` itself carries no
-timestamps). Both `enabled`, both diagnostic-only, neither part of the
-image build.
+rotates 3x20MB): `enabled`, diagnostic-only, not part of the image build.
+
+`/var/log/uxplay.log` carries UTC millisecond timestamps in the same format
+this investigation used: `uxplay.service` runs uxplay under
+`/usr/local/bin/log-ts` (see README's on-device diagnostics section).

@@ -98,8 +98,8 @@ hotspot — MacBook needs simultaneous internet access).
   (per UxPlay's own README guidance). Has `Environment=HOME=/home/uxplay` +
   `GST_REGISTRY=...` since the user has no real home dir by default (had to
   `mkdir -p /home/uxplay` manually). Output redirected straight to
-  `/var/log/uxplay.log` via `StandardOutput=append:...` + `ExecStart=/usr/bin/stdbuf
-  -oL -eL ...` — **journald silently rate-limits uxplay's high-volume per-packet
+  `/var/log/uxplay.log` via `StandardOutput=append:...` + `ExecStart=/usr/local/bin/log-ts
+  -- /usr/bin/stdbuf -oL -eL ...` — **journald silently rate-limits uxplay's high-volume per-packet
   logging**, making it look like connections produce zero log output; always use
   the file+stdbuf approach for real diagnostics, not `journalctl`.
 - **macOS ControlCenter Screen Recording permission**: added manually via

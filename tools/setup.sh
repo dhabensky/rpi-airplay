@@ -141,8 +141,10 @@ cat <<'EOF'
 
 ==> Done. Remaining manual steps:
     1. Build the receiver binary: see ../README.md "Building the uxplay_debug binary".
-    2. Copy it to /usr/local/bin/uxplay_debug on this Pi (matches the ExecStart
-       in ../image-builder/files/etc/systemd/system/uxplay.service).
+    2. Copy it to /usr/local/bin/uxplay_debug on this Pi, plus `make log-ts`'s
+       build/bin/log-ts to /usr/local/bin/log-ts -- the ExecStart in
+       ../image-builder/files/etc/systemd/system/uxplay.service runs uxplay_debug
+       under it to timestamp /var/log/uxplay.log, and won't start without it.
     3. If this is the first time bcm2835-codec was loaded, reboot once.
     4. systemctl start uxplay.service
 EOF

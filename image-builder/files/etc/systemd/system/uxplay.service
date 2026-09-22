@@ -15,7 +15,10 @@ User=uxplay
 RuntimeDirectory=uxplay
 EnvironmentFile=-/etc/default/uxplay
 ExecStartPre=/usr/local/bin/zero-fb0
-ExecStart=/usr/bin/stdbuf -oL -eL /usr/local/bin/uxplay_debug -vd v4l2h264dec -vc identity -srgb no -n "${UXPLAY_DISPLAY_NAME}" -reset 60 -vs "kmssink qos=false ts-offset=300000000" -as "alsasink device=plughw:vc4hdmi,0" -ofifo /run/uxplay/overscan.fifo
+# log-ts is the main process: it timestamps uxplay_debug's merged output into
+# /var/log/uxplay.log and then exits exactly as its child did, so a dead
+# timestamper fails the unit instead of leaving it alive but mute.
+ExecStart=/usr/local/bin/log-ts -- /usr/bin/stdbuf -oL -eL /usr/local/bin/uxplay_debug -vd v4l2h264dec -vc identity -srgb no -n "${UXPLAY_DISPLAY_NAME}" -reset 60 -vs "kmssink qos=false ts-offset=300000000" -as "alsasink device=plughw:vc4hdmi,0" -ofifo /run/uxplay/overscan.fifo
 ExecStartPost=/usr/local/bin/uxplay-overscan-sync
 Restart=on-failure
 RestartSec=3
