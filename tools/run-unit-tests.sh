@@ -31,6 +31,16 @@ docker run --rm \
       test_netlink_addr_watch.c ../lib/netlink_addr_watch.c
     /tmp/test_netlink_addr_watch
 
+    # Pulls in llhttp verbatim (vendored, not -Wextra-clean) alongside the
+    # function under test -- -Wall -Werror only, matching the gstreamer tests
+    # below for the same reason.
+    gcc -O0 -g -Wall -Werror \
+      -o /tmp/test_on_url_protocol_bounds \
+      test_on_url_protocol_bounds.c ../lib/http_request.c \
+      ../lib/llhttp/api.c ../lib/llhttp/http.c ../lib/llhttp/llhttp.c \
+      -I../lib -I../lib/llhttp
+    /tmp/test_on_url_protocol_bounds
+
     # Pulls in renderers/audio_renderer.c directly (file-static symbols) --
     # needs GStreamer + the app plugin'"'"'s headers (gst/app/gstappsrc.h).
     gcc -O0 -g -Wall \
