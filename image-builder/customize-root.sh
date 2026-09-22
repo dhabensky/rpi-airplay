@@ -23,16 +23,19 @@
 #
 # Usage: image-builder/customize-root.sh <root-dir> <vendor-gstreamer-dir> \
 #          <uxplay-debug-binary> <menu-render-binary> <log-ts-binary> \
-#          <files-dir> [personal-env-file]
+#          <drmdump-binary> <synthetic-client-binary> <files-dir> \
+#          [personal-env-file]
 set -euo pipefail
 
-work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <menu-render-binary> <log-ts-binary> <files-dir> [personal-env-file]}"
+work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <menu-render-binary> <log-ts-binary> <drmdump-binary> <synthetic-client-binary> <files-dir> [personal-env-file]}"
 vendor="${2:?}"
 uxplay_bin="${3:?}"
 menu_render_bin="${4:?}"
 log_ts_bin="${5:?}"
-provfiles="${6:?}"
-personal_env="${7:-}"
+drmdump_bin="${6:?}"
+synthetic_client_bin="${7:?}"
+provfiles="${8:?}"
+personal_env="${9:-}"
 
 # The Makefile mounts a persistent named volume directly at
 # $work/var/cache/apt/archives (via an extra `-v` flag on the `docker run`
@@ -287,6 +290,13 @@ install -m 0755 "$menu_render_bin" "$work/usr/local/bin/menu-render"
 
 echo "==> Installing log-ts binary (uxplay.service's ExecStart wrapper/timestamper)"
 install -m 0755 "$log_ts_bin" "$work/usr/local/bin/log-ts"
+
+echo "==> Installing the drmdump and synthetic-client diagnostic tools"
+# On-demand tools, no unit and no runtime cost: drmdump dumps live DRM
+# plane/CRTC state, synthetic-client drives a real RTSP/RTP session against
+# uxplay (see docs/testing.md).
+install -m 0755 "$drmdump_bin" "$work/usr/local/bin/drmdump"
+install -m 0755 "$synthetic_client_bin" "$work/usr/local/bin/synthetic-client"
 
 echo "==> Installing image-builder/files/ content (systemd units, udev rule, modules-load, uxrun, zero-fb0, uxplay-menu-render, uxplay-menu-render-watch)"
 cp -a "$provfiles/etc/." "$work/etc/"

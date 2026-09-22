@@ -97,8 +97,18 @@ surviving seeks — does.
   `uxplay_debug`, timestamps its merged stdout+stderr and exits the way it
   did. One log file, prefixed at the source; consumers grep unanchored
   patterns, so the prefix is transparent to them.
+- **`/usr/local/bin/drmdump`** — dumps live DRM plane/CRTC state and writes
+  each on-screen plane's framebuffer to `/tmp/drmdump.plane<N>.raw`, or to
+  `/tmp/drmdump.plane<N>.p<M>.raw` (one file per buffer) for a multi-buffer
+  plane like the video overlay; the way to check what is actually on screen
+  (`tools/drmdump.c`).
+- **`/usr/local/bin/synthetic-client`** — the standalone test client
+  (`UxPlay/tools/synthetic-client.cpp`); drives real RTSP/RTP sessions
+  against the running `uxplay.service` (`mirrortest`, `threadtest`, ...).
+  See `docs/testing.md`.
 
-`tcpdump` and `gdb` are installed too (`apt-packages.lock`).
+These are on-demand tools with no units and no runtime cost. `tcpdump` and
+`gdb` are installed too (`apt-packages.lock`).
 
 ## Building the uxplay_debug binary
 

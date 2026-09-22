@@ -29,8 +29,27 @@ genuinely separate process from an unmodified `uxplay_debug` -- e.g.
 --port <raop_port>` against a container already running `uxplay -vs 0
 -ble <file>` (see `tools/pytest/conftest.py`'s `TwoProcessRunner` for the
 exact pattern the pytest suite below uses). No Pi hardware needed for the
-audio path (`-vs 0` skips video/DRM entirely). Can also run on the Pi for
-a real `alsasink` instead of `autoaudiosink`.
+audio path (`-vs 0` skips video/DRM entirely).
+
+The image also ships the binary at `/usr/local/bin/synthetic-client`, so the
+same modes can be driven against the live `uxplay.service` on the real device
+(real `alsasink`, real hardware decoder, real DRM planes) without deploying a
+binary. `mirrortest` additionally needs a `.cap` frame fixture, which is *not*
+in the image (`tools/captures/` is local test data) -- copy one over first and
+point `--frames-cap` at it, otherwise it exits 1 with `load_mirror_frames:
+cannot open tools/captures/trimmed/...`:
+
+```bash
+scp tools/captures/trimmed/personalmac-stall-20260911-10s.cap root@<pi>:/root/
+# then, on the Pi:
+PORT=$(ss -tlnp | grep uxplay_debug | awk '{print $4}' | sed 's/.*://' | sort -n | head -1)
+/usr/local/bin/synthetic-client mirrortest 1 --port "$PORT" \
+  --frames-cap /root/personalmac-stall-20260911-10s.cap
+```
+
+The other modes need no fixture. Use `drmdump` (also shipped) to check what
+the session actually put on screen. `/var/log/uxplay.log` is timestamped
+(UTC, ms), so its lines correlate directly with anything else timestamped.
 
 This is a standalone binary, not a flag baked into `uxplay.cpp` -- moved
 out entirely (see `docs/threadtest.md`) so the server under test is

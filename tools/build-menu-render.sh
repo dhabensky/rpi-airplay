@@ -2,10 +2,9 @@
 # Builds menu-render, the idle-menu rendering binary shipped in the image
 # (invoked by `make image` via the Makefile's build/bin/menu-render
 # target, then installed by customize-root.sh) -- same output-dir shape as
-# build-drmdump.sh, but that one stays hand-run/diagnostic-only. Same
-# shared Dockerfile tooling image as everything else, produces a real
-# aarch64 binary the same way uxplay_debug does (colima's VM is native
-# arm64 on Apple Silicon -- no cross-compilation flags needed). Standalone
+# build-drmdump.sh. Same shared Dockerfile tooling image as everything else,
+# produces a real aarch64 binary the same way uxplay_debug does (colima's VM
+# is native arm64 on Apple Silicon -- no cross-compilation flags needed). Standalone
 # rather than folded into build-drmdump.sh since menu-render is a
 # conceptually separate tool (GStreamer text rendering, not raw DRM/libdrm
 # calls) with its own dependency set (gstreamer-1.0, gstreamer-app-1.0).

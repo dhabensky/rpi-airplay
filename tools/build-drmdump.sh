@@ -1,9 +1,10 @@
 #!/bin/bash
-# Diagnostic-only tool build, not part of the shipped image and not wired
-# into the Makefile -- run by hand when needed. Same shared Dockerfile
-# tooling image as everything else, produces real aarch64 binaries on this
-# host the same way uxplay_debug does (colima's VM is native arm64 on
-# Apple Silicon -- no cross-compilation flags needed).
+# Builds the drmdump/drmpaint diagnostic tools. drmdump is shipped in the
+# image (the Makefile's build/bin/drmdump target, installed by
+# customize-root.sh); drmpaint is built here too but stays hand-deployed.
+# Same shared Dockerfile tooling image as everything else, produces real
+# aarch64 binaries on this host the same way uxplay_debug does (colima's VM
+# is native arm64 on Apple Silicon -- no cross-compilation flags needed).
 #
 # Usage: tools/build-drmdump.sh [output-dir]   (default: build/bin)
 # output-dir must live under $PWD (or elsewhere under $HOME), NOT the
