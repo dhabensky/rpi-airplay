@@ -47,11 +47,44 @@ user to ask, so don't guess silently and don't stall on it either.
 - **Test real behavior on real hardware when the claim is
   hardware-specific.** This project has a real Pi reachable over SSH and
   a `-capture`/`-replay` harness for driving the real video pipeline
-  offline. A claim like "this fixes a decoder freeze" or "this saves N
-  seconds" needs an actual measurement, not reasoning from the diff.
-  Clean up any temporary debug instrumentation (stray `fprintf`, env-var
-  escape hatches) before finishing, and restore any live service you
-  stopped/modified on the Pi back to its original state.
+  offline — the latter for fast iteration only, never for acceptance
+  (see the next rule). A claim like "this fixes a decoder freeze" or
+  "this saves N seconds" needs an actual measurement, not reasoning from
+  the diff. Clean up any temporary debug instrumentation (stray
+  `fprintf`, env-var escape hatches) before finishing, and restore any
+  live service you stopped/modified on the Pi back to its original state.
+- **`-replay` is never acceptance evidence for a pipeline change.** For
+  anything touching the video/audio pipeline, DRM planes, or the httpd/
+  RAOP threads, `-replay`'s single-threaded feeder structurally cannot
+  exercise the thread interleaving that has produced four reverted
+  regressions in this exact area. Acceptance requires both: real RTSP
+  traffic (`UxPlay/tools/synthetic-client.cpp`'s `mirrortest` — extend it
+  if it doesn't cover the session type you changed; that is in scope, not
+  scope creep) **and** a real end-to-end run on the Pi.
+- **Prove the defect is gone, not merely unreachable.** Every fix needs a
+  negative control: run your regression test against the pre-fix code and
+  show it actually failing, then against the fix and show it passing. If
+  your change only closes the path that reaches a defect while the defect
+  itself survives (e.g. bounding a caller instead of the function that
+  over-reads), that is a mitigation, not a fix — report it as such. Four
+  consecutive rounds here each "verified" a fix that had only moved the
+  conditions under which the real defect was reachable.
+- **"Found a real defect" is not "explained the reported symptom."** When
+  the task starts from a user-visible symptom, report two things
+  separately: the defect you found, and whether you reproduced the
+  *symptom* before your change and confirmed it gone after. If you never
+  reproduced the symptom, say so plainly — a genuine defect found nearby
+  is not evidence of the cause. Nine hours and five rounds once went into
+  a real defect that turned out to be unrelated to the reported symptom.
+- **Deploying to the live Pi is pre-authorized**, so never stall mid-task
+  to hand a copy-paste command back to the user. It is at
+  `192.168.1.34`, `ssh root@192.168.1.34`, password `dietpi`, and SSH
+  needs `-o PreferredAuthentications=password -o PubkeyAuthentication=no`
+  (use `sshpass -e` with `SSHPASS=dietpi`). The device is reflashable and
+  holds no critical data: deploy, restart services, and test for real.
+  Always checksum the deployed binary and put the sum in your report.
+  Flashing the SD card is the one exception — that stays manual and
+  user-driven.
 - **Check for prior art before hitting a known macOS/tooling gotcha.**
   Known traps in this project, do not rediscover them the hard way: (1)
   macOS's `/tmp` is NOT shared into colima's Docker VM — use this repo's

@@ -41,14 +41,40 @@ the developer's own report, and you produce a findings list.
    was it actually measured on the real Pi, not just reasoned about? If
    you have Bash access and it's cheap, re-run the relevant build/tests
    yourself rather than trusting the report blindly.
-7. **Leftover debug artifacts.** Grep the diff for temporary `fprintf`/
+7. **Sufficiency of the evidence class, not just its presence.** If the
+   diff touches the video/audio pipeline, DRM planes, or the httpd/RAOP
+   threads and the only evidence is `-replay` and/or unit tests, that is
+   a blocking finding no matter how clean the output looks. This project
+   approved exactly such a change once and it produced four real
+   regressions on hardware within hours. Acceptance needs real RTSP
+   traffic (`synthetic-client mirrortest`) plus a real Pi run.
+8. **Defect removed, or only made unreachable?** Trace whether the fix
+   eliminates the defect itself or merely closes the path that reaches
+   it. A caller-side bound over a function that still over-reads is a
+   mitigation; if the report calls it a fix, that's a finding. Four
+   consecutive rounds here passed review-by-developer on this exact
+   confusion before it was caught.
+9. **Does the regression test discriminate?** A test that was never shown
+   failing on the pre-fix code proves nothing about the fix. If the
+   report doesn't include that negative control, ask for it — or produce
+   it yourself if it's cheap, since you have Bash.
+10. **Symptom vs. defect.** If the task started from a user-visible
+   symptom, check whether the report claims to have fixed *that symptom*
+   without ever reproducing it. Finding a real defect nearby is not
+   evidence of cause, and presenting it as one has cost this project
+   days.
+11. **Separate what you reproduced from what you trusted.** Your findings
+   list must state explicitly which of the developer's claims you re-ran
+   or independently reproduced, and which you accepted on trust. An
+   approval built entirely on trust is worth saying out loud.
+12. **Leftover debug artifacts.** Grep the diff for temporary `fprintf`/
    `printf`-style debug lines, temp env-var escape hatches, or other
    scaffolding that should have been removed before finishing.
-8. **Internal consistency of the developer's own summary.** If the
+13. **Internal consistency of the developer's own summary.** If the
    report states counts/numbers (files changed, tests passing), do the
    numbers actually add up? Don't let an arithmetic slip pass silently
    — recompute it yourself from the raw output if in doubt.
-9. **Git hygiene**, if history was touched: are fixes amended into the
+14. **Git hygiene**, if history was touched: are fixes amended into the
    commit that originally introduced the thing being fixed (not piled
    onto the tip)? Does the commit message match the final content?
 

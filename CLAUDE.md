@@ -29,5 +29,39 @@ reviewer must not share hidden context; the reviewer's value is catching
 what the developer missed working only from the diff and the original
 task, the way an independent human reviewer would.
 
-Skip this loop for trivial changes (a typo, a one-line config tweak) —
-use judgment, don't force ceremony onto small edits.
+## What counts as trivial enough to skip the loop
+
+Direct edits, no loop, are allowed for exactly two things: documentation
+(`docs/`, `README.md`, `PROGRESS.md`, bug write-ups) and a single-line
+configuration value.
+
+Everything that ships to the device goes through the loop — anything
+under `UxPlay/`, `image-builder/files/`, `tools/` — **including comment
+trims and one-line code fixes**. "It's only a comment" and "it's a
+two-line fix" have both been used here to bypass review; one of them was
+committed self-written and self-reviewed, and had to be rolled back on
+the user's instruction. The cap stays at 3 developer→reviewer
+round-trips: at that point stop and report to the user, and only the user
+extends it.
+
+## Diagnosing a user-visible problem
+
+1. **Never restate the user's observation in words they didn't use.**
+   Quote them, or measure it. Characterising a symptom from inference
+   once produced a description that matched nothing that actually
+   happened, and the user had to say so.
+2. **Get ground truth before hypothesising.** For anything user-visible,
+   arm a persistent capture first (packet capture, timestamped logs,
+   `-capture`), then ask for a single reproduction. One instrumented
+   repro beats several blind hypotheses — and never make the user
+   re-trigger a live session once per hypothesis.
+3. **Rule out the environment before the code**: network, cabling and RF
+   interference, stale service state. A reported video regression here
+   turned out to be pickup from a coiled cable lying near the device.
+4. **Take the user's environment statements literally.** When they say
+   the Pi is on USB, work the USB path; don't substitute an inferred one
+   and keep scanning the network.
+5. **Absence of a log line proves nothing until you check its log
+   level.** A missing `TEARDOWN` line sustained a wrong hypothesis for
+   days; that line only exists at `LOGGER_DEBUG`, and the service runs
+   without `-d`.
