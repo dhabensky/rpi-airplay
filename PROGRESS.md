@@ -2144,3 +2144,18 @@ answered every request within 0.5ms during the failure). Workaround,
 confirmed: re-select the receiver, then stop again. A receiver-side kill
 switch (HDMI-CEC key, or a command channel next to `-ofifo`) was
 deliberately not built.
+
+## 2026-09-23: direct-Ethernet backup management channel
+
+`eth0-backup-ip.service` keeps `169.254.100.1/16 scope link` on eth0 (DietPi
+never ifup's eth0 when WiFi is enabled, so eth0 was simply down before). Three
+developer/reviewer rounds; `make test-eth-backup` 23/23 under nspawn. The
+round-1 review caught that `hostname -I` in `uxplay-menu-render` would have put
+the backup address on the TV menu; the menu now shows the first global IPv4.
+
+Deployed live over WiFi (checksums match the repo) and checked with a real
+cable to the Mac: the Pi got carrier and holds the address, the menu IP stays
+the WiFi address, mDNS answers on both interfaces. Real-hardware finding: with
+the Mac's WiFi up, macOS routes 169.254/16 via `en0`, so a plain
+`ssh root@169.254.100.1` times out; `ssh -o BindInterface=en9 ...` and
+`ssh root@fe80::ba27:ebff:feef:9450%en9` both work. README documents this.

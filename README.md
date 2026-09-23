@@ -98,12 +98,21 @@ Mac needs no setup: with no DHCP server on the cable, macOS self-assigns a
 `169.254.x.x` address on that interface after a few seconds. Then:
 
 ```
-ssh root@169.254.100.1
+ssh -o BindInterface=en9 root@169.254.100.1
 ```
 
-`ssh root@rpi-airplay.local` may also work over the cable, but it is less
-reliable: it has only been checked with an mDNS query under nspawn, not from
-a real Mac, and with WiFi up too the name can resolve to either path.
+`en9` is the Mac's wired interface (`ifconfig` — the one with a
+`169.254.x.x` address and `status: active`; it depends on the adapter).
+`BindInterface` is needed while the Mac's WiFi is up: macOS also installs a
+`169.254/16` route on `en0` and prefers it, so a plain
+`ssh root@169.254.100.1` goes out over WiFi and times out. With WiFi off the
+plain form works. An alternative that never depends on routing is the
+Pi's IPv6 link-local address with an explicit interface:
+`ssh root@fe80::ba27:ebff:feef:9450%en9` (derived from this Pi's eth0 MAC).
+
+`rpi-airplay.local` also resolves over the cable (mDNSResponder returns
+both the WiFi and the cable addresses), but which one `ssh` picks is up to
+macOS, so don't rely on it when WiFi is flaky.
 
 This is additive only: WiFi stays the primary path and the Pi runs no DHCP
 server, so plugging `eth0` into a real LAN hands out no DHCP leases (avahi
