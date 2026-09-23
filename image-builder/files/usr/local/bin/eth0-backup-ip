@@ -1,0 +1,34 @@
+#!/bin/bash
+# Keeps eth0 up with 169.254.100.1/16 (a directly cabled Mac self-assigns
+# 169.254/16, so no config on its side). Additive to whatever DHCP does.
+set -u
+
+IFACE=eth0
+ADDR=169.254.100.1/16
+RECHECK_SECS=30
+
+ensure() {
+  local link
+  link=$(ip -o link show dev "$IFACE" 2>/dev/null) || return 0
+  if ! grep -Eq '[<,]UP[,>]' <<<"$link"; then
+    ip link set dev "$IFACE" up
+  fi
+  # scope link keeps it out of global-address lookups (e.g. the idle menu's IP).
+  if ! ip -o -4 addr show dev "$IFACE" scope link | grep -qF "inet $ADDR "; then
+    ip addr del "$ADDR" dev "$IFACE" 2>/dev/null
+    ip addr add "$ADDR" dev "$IFACE" scope link
+  fi
+}
+
+# A self-healing loop, not an ifupdown stanza: DietPi only ifup's eth0 when WiFi
+# is off or fails at first boot, and dhclient-script/ifdown flush eth0's IPv4
+# addresses. Re-applied on every link/address event, plus a periodic re-check.
+exec < <(exec ip monitor link address)
+ensure
+while :; do
+  read -r -t "$RECHECK_SECS" _
+  rc=$?
+  # EOF means `ip monitor` died: exit so systemd restarts the whole thing.
+  [ "$rc" -eq 0 ] || [ "$rc" -gt 128 ] || exit 1
+  ensure
+done

@@ -298,13 +298,14 @@ echo "==> Installing the drmdump and synthetic-client diagnostic tools"
 install -m 0755 "$drmdump_bin" "$work/usr/local/bin/drmdump"
 install -m 0755 "$synthetic_client_bin" "$work/usr/local/bin/synthetic-client"
 
-echo "==> Installing image-builder/files/ content (systemd units, udev rule, modules-load, uxrun, zero-fb0, uxplay-menu-render, uxplay-menu-render-watch)"
+echo "==> Installing image-builder/files/ content (systemd units, udev rule, modules-load, uxrun, zero-fb0, uxplay-menu-render, uxplay-menu-render-watch, eth0-backup-ip)"
 cp -a "$provfiles/etc/." "$work/etc/"
 install -m 0755 "$provfiles/usr/local/bin/uxrun" "$work/usr/local/bin/uxrun"
 install -m 0755 "$provfiles/usr/local/bin/zero-fb0" "$work/usr/local/bin/zero-fb0"
 install -m 0755 "$provfiles/usr/local/bin/uxplay-overscan-sync" "$work/usr/local/bin/uxplay-overscan-sync"
 install -m 0755 "$provfiles/usr/local/bin/uxplay-menu-render" "$work/usr/local/bin/uxplay-menu-render"
 install -m 0755 "$provfiles/usr/local/bin/uxplay-menu-render-watch" "$work/usr/local/bin/uxplay-menu-render-watch"
+install -m 0755 "$provfiles/usr/local/bin/eth0-backup-ip" "$work/usr/local/bin/eth0-backup-ip"
 
 if [ -n "$personal_env" ] && [ -f "$personal_env" ]; then
   # shellcheck disable=SC1090
@@ -380,6 +381,11 @@ echo "    .install_stage to 0 on every real hardware boot regardless of"
 echo "    what's baked into the image at build time)"
 ln -sf /etc/systemd/system/dietpi-skip-firstrun.service \
   "$work/etc/systemd/system/multi-user.target.wants/dietpi-skip-firstrun.service"
+
+echo "==> Enabling eth0-backup-ip.service (fixed 169.254.100.1/16 on eth0, a"
+echo "    direct-cable management channel independent of WiFi and DHCP)"
+ln -sf /etc/systemd/system/eth0-backup-ip.service \
+  "$work/etc/systemd/system/multi-user.target.wants/eth0-backup-ip.service"
 
 echo "==> Enabling persistent journald logging (DietPi default is volatile --"
 echo "    /run tmpfs only, wiped on power-off -- learned the hard way when a"

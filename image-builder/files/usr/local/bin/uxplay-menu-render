@@ -21,7 +21,8 @@ if [ -f "$CONF" ]; then
   . "$CONF"
 fi
 
-ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+# Global scope only: eth0's link-scope 169.254.100.1 backup address is never shown.
+ip="$(ip -4 -o addr show scope global 2>/dev/null | awk '{sub(/\/.*/, "", $4); print $4; exit}')"
 [ -n "$ip" ] || ip="(no IP yet)"
 
 ssid="$(wpa_cli -i wlan0 status 2>/dev/null | grep '^ssid=' | cut -d= -f2-)"

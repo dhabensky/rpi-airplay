@@ -1,0 +1,11 @@
+[Unit]
+Description=Keep the 169.254.100.1/16 backup management address on eth0
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/eth0-backup-ip
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

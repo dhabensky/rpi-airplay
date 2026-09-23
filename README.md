@@ -89,6 +89,29 @@ surviving seeks — does.
   software performance bug. Always check `vcgencmd get_throttled` /
   `measure_clock arm` first for any performance issue.
 
+## Backup channel: direct Ethernet cable
+
+When WiFi or the home network is down, plug an Ethernet cable straight
+from the Mac to the Pi. The Pi always holds `169.254.100.1/16` on `eth0`
+(`eth0-backup-ip.service`), whether or not the cable was in at boot. The
+Mac needs no setup: with no DHCP server on the cable, macOS self-assigns a
+`169.254.x.x` address on that interface after a few seconds. Then:
+
+```
+ssh root@169.254.100.1
+```
+
+`ssh root@rpi-airplay.local` may also work over the cable, but it is less
+reliable: it has only been checked with an mDNS query under nspawn, not from
+a real Mac, and with WiFi up too the name can resolve to either path.
+
+This is additive only: WiFi stays the primary path and the Pi runs no DHCP
+server, so plugging `eth0` into a real LAN hands out no DHCP leases (avahi
+is not restricted to `wlan0`, so it does advertise the host and AirPlay
+services there too). The address is link-scope, so the idle menu keeps
+showing the WiFi IP. Checked offline by `make test-eth-backup`
+(`tools/nspawn-test-eth-backup.sh`).
+
 ## On-device diagnostics (shipped in the image, nothing to deploy)
 
 - **`/var/log/uxplay.log` lines are timestamped** — UTC ISO-8601 with

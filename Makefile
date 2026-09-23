@@ -8,7 +8,7 @@
 .PHONY: image image-xz uxplay menu-render log-ts drmdump synthetic-client \
         vendor-gstreamer base-image golden-reference verify \
         reproducible-check refresh-base-image refresh-apt-lists refresh-buildenv-apt-lists \
-        test-boot test-resize clean
+        test-boot test-eth-backup test-resize clean
 
 # One shared tooling image (see Dockerfile's own header) for every
 # disposable build/test/tool environment this project uses.
@@ -201,6 +201,12 @@ refresh-buildenv-apt-lists:
 test-boot: build/rpi-airplay.img
 	colima ssh -- bash -c 'dpkg -s systemd-container >/dev/null 2>&1 || (sudo apt-get update -qq && sudo apt-get install -y -qq systemd-container)'
 	colima ssh -- sudo bash -s -- < tools/nspawn-test-boot.sh
+
+# eth0's 169.254.100.1/16 backup address under nspawn with veths named
+# eth0/wlan0 (see tools/nspawn-test-eth-backup.sh for the cases covered).
+test-eth-backup: build/rpi-airplay.img
+	colima ssh -- bash -c 'dpkg -s systemd-container dnsmasq-base >/dev/null 2>&1 || (sudo apt-get update -qq && sudo apt-get install -y -qq systemd-container dnsmasq-base)'
+	colima ssh -- sudo bash -s -- < tools/nspawn-test-eth-backup.sh
 
 # Complements test-boot: nspawn never has a real block device backing its
 # root filesystem, so DietPi's own first-boot partition/filesystem-resize
