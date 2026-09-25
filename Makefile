@@ -140,7 +140,7 @@ build/rpi-airplay.img: build/uxplay_debug build/bin/menu-render build/bin/uxplay
                           $(shell find image-builder/files -type f) \
                           image-builder/extract-partitions.sh image-builder/customize-root.sh \
                           image-builder/apt-packages.lock $(shell find image-builder/apt-lists -type f) \
-                          image-builder/customize-boot.sh \
+                          image-builder/customize-boot.sh image-builder/apply-personal-env.sh \
                           image-builder/build-image.sh Dockerfile \
                           $(shell find apt-lists -type f 2>/dev/null) \
                           $(PERSONAL_ENV)

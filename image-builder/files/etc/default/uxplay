@@ -1,3 +1,7 @@
+# A `# personal.env: KEY` line below means the value on the line after it is
+# replaced at image-build time with that key's value from personal.env, when
+# personal.env sets one (image-builder/apply-personal-env.sh).
+
 # Pixels to inset the rendered picture on each edge, compensating for this
 # TV's own overscan/zoom cropping the outer edges of the HDMI signal. A
 # value that is not an integer leaves that edge at 0; any out-of-range set
@@ -7,9 +11,13 @@
 # reconnect needed (uxplay-menu watches this file). See PROGRESS.md's
 # 2026-09-12 entry for how to measure your TV's crop with tools/drmpaint.c
 # + tools/drmdump.c.
+# personal.env: OVERSCAN_LEFT
 UXPLAY_OVERSCAN_LEFT=0
+# personal.env: OVERSCAN_RIGHT
 UXPLAY_OVERSCAN_RIGHT=0
+# personal.env: OVERSCAN_TOP
 UXPLAY_OVERSCAN_TOP=0
+# personal.env: OVERSCAN_BOTTOM
 UXPLAY_OVERSCAN_BOTTOM=0
 
 # AirPlay device name -- shown to clients and on the idle menu screen.
@@ -17,4 +25,5 @@ UXPLAY_OVERSCAN_BOTTOM=0
 # uxplay-menu-render; neither bakes the other's format/location in. A
 # non-UTF-8 value is dropped by systemd, so uxplay advertises an empty name,
 # while the menu logs it and falls back to the renderer's own default.
+# personal.env: DISPLAY_NAME
 UXPLAY_DISPLAY_NAME="Living Room TV"

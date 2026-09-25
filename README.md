@@ -54,7 +54,10 @@ surviving seeks — does.
   images, and assembles the final `.img` — all without loop devices or
   `--privileged` containers (see that dir's scripts for the mechanics).
   `image-builder/files/` is the config-file payload it installs onto the
-  image (systemd unit, udev rule, `uxrun`, `zero-fb0`, ...). Every `apt`
+  image (systemd unit, udev rule, `uxrun`, `zero-fb0`, ...) and the only
+  copy of that content: a `# personal.env: KEY` marker line in such a file
+  is what `apply-personal-env.sh` substitutes a `personal.env` value into,
+  so nothing is rewritten from scratch at build time. Every `apt`
   package installed (not just the top-level ones — their full transitive
   closure too) is pinned to an exact version via `apt-packages.lock`, so
   the image doesn't silently drift as Debian trixie moves forward — see

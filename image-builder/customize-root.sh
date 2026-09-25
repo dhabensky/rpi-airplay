@@ -310,34 +310,11 @@ install -m 0755 "$provfiles/usr/local/bin/uxplay-menu-render" "$work/usr/local/b
 install -m 0755 "$provfiles/usr/local/bin/eth0-backup-ip" "$work/usr/local/bin/eth0-backup-ip"
 
 if [ -n "$personal_env" ] && [ -f "$personal_env" ]; then
-  # shellcheck disable=SC1090
-  . "$personal_env"
-  if [ -n "${OVERSCAN_LEFT:-}" ] || [ -n "${OVERSCAN_RIGHT:-}" ] || [ -n "${OVERSCAN_TOP:-}" ] || [ -n "${OVERSCAN_BOTTOM:-}" ] || [ -n "${DISPLAY_NAME:-}" ]; then
-    echo "==> Baking in overscan compensation / display name from personal.env"
-    # Default sourced from the checked-in file (single source of truth for
-    # "Living Room TV") rather than a second hardcoded copy here.
-    default_display_name="$(. "$provfiles/etc/default/uxplay"; echo "$UXPLAY_DISPLAY_NAME")"
-    cat > "$work/etc/default/uxplay" <<EOF
-# Pixels to inset the rendered picture on each edge, compensating for this
-# TV's own overscan/zoom cropping the outer edges of the HDMI signal. A
-# value that is not an integer leaves that edge at 0; any out-of-range set
-# (a negative margin, or margins leaving width or height <= 0) makes uxplay
-# ignore all four and use the full screen. No overscan value here can stop
-# uxplay.service from starting. Applied live -- edit and save, no restart or
-# reconnect needed (uxplay-menu watches this file). Baked in at image-build
-# time from personal.env.
-UXPLAY_OVERSCAN_LEFT=${OVERSCAN_LEFT:-0}
-UXPLAY_OVERSCAN_RIGHT=${OVERSCAN_RIGHT:-0}
-UXPLAY_OVERSCAN_TOP=${OVERSCAN_TOP:-0}
-UXPLAY_OVERSCAN_BOTTOM=${OVERSCAN_BOTTOM:-0}
-
-# AirPlay device name -- shown to clients and on the idle menu screen. A
-# non-UTF-8 value is dropped by systemd, so uxplay advertises an empty name,
-# while the menu logs it and falls back to the renderer's own default.
-# Baked in at image-build time from personal.env.
-UXPLAY_DISPLAY_NAME="${DISPLAY_NAME:-$default_display_name}"
-EOF
-  fi
+  echo "==> Substituting personal.env values into the provisioned /etc/default/uxplay"
+  # The copy just installed above stays the content; only values carrying a
+  # `# personal.env: KEY` marker get rewritten, so an unset key leaves the
+  # checked-in default (and the whole file) exactly as committed.
+  bash "$(dirname "$0")/apply-personal-env.sh" "$personal_env" "$work/etc/default/uxplay"
 fi
 
 echo "==> Un-blacklisting the bcm2835 hardware H.264 decoder"
