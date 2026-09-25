@@ -83,10 +83,10 @@ build/uxplay_debug: Dockerfile $(shell find apt-lists -type f 2>/dev/null) $(UXP
 
 # --- synthetic-client binary: the same build-uxplay.sh run that produces
 # build/uxplay_debug writes this one too, so re-run that build only when this
-# copy is missing or older, and fail loudly rather than shipping a stale one.
+# copy is missing or older -- that run truncates both, so it cannot be stale.
 build/synthetic-client: build/uxplay_debug
 	@{ [ -s $@ ] && [ ! $@ -ot $< ]; } || ./tools/build-uxplay.sh build/uxplay_debug
-	@{ [ -s $@ ] && [ ! $@ -ot $< ]; } || { echo "ERROR: $@ missing or older than $< after tools/build-uxplay.sh" >&2; exit 1; }
+	@./tools/check-build-artifact.sh $@
 
 # --- menu-render binary (native arm64 via colima/Docker) ---
 # Each of these rules asserts its own product: the build scripts mount an

@@ -29,22 +29,23 @@ cd "$(dirname "$0")/.."
 out="${1:?usage: $0 <output-path> [source-dir]}"
 src="${2:-$PWD/UxPlay}"
 mkdir -p "$(dirname "$out")"
-# Docker's bind-mount creates the host path as a DIRECTORY if it doesn't
-# already exist -- fine on a repeat build (the previous run's file is
-# already there), silently wrong on a genuinely fresh output path (the
-# container's own `cp` then lands inside that directory instead of at the
-# path itself). touch+chmod first so the mount always targets a real,
-# executable file -- `cp` writing into an already-existing destination
-# inode (that's what the bind mount is) doesn't change its permission
-# bits, so a plain `touch` alone would leave it non-executable.
-touch "$out"
-chmod +x "$out"
 synth_out="$(dirname "$out")/synthetic-client"
-touch "$synth_out"
+# The bind mount needs a real, executable file at each host path: Docker
+# creates a DIRECTORY instead when nothing is there, and `cp` into an existing
+# inode leaves its permission bits alone. Truncated, so no stale file survives.
+: > "$out"
+chmod +x "$out"
+: > "$synth_out"
 chmod +x "$synth_out"
 out_abs="$(cd "$(dirname "$out")" && pwd)/$(basename "$out")"
 synth_out_abs="$(cd "$(dirname "$synth_out")" && pwd)/$(basename "$synth_out")"
 src_abs="$(cd "$src" && pwd)"
+
+# Host-side only, never mounted, so a host temp dir is fine for it.
+run_log="$(mktemp "${TMPDIR:-/tmp}/build-uxplay.XXXXXX")"
+# A build that fails leaves nothing behind: tools/pytest's uxplay_binary
+# fixture adopts whatever exists at its output path as the binary under test.
+trap 'rc=$?; rm -f "$out_abs" "$synth_out_abs" "$run_log"; exit $rc' ERR INT TERM
 
 docker build -q -t rpi-airplay-buildenv -f Dockerfile .
 
@@ -69,11 +70,18 @@ docker run --rm \
     cp /usr/local/bin/uxplay /out/uxplay_debug
     if [ -f /src/UxPlay/build/synthetic-client ]; then
       cp /src/UxPlay/build/synthetic-client /out/synthetic-client
+      echo "synthetic-client: copied"
     else
-      echo "(no tools/synthetic-client.cpp target at this ref -- skipping)"
+      echo "synthetic-client: no tools/synthetic-client.cpp target at this ref"
     fi
-  '
+  ' 2>&1 | tee "$run_log"
 
 # The container can copy to /out/uxplay_debug and exit 0 while the host file
 # stays 0 bytes, if $out is on a path the Docker VM doesn't share.
 ./tools/check-build-artifact.sh "$out_abs"
+# Only refs that have the target produce this one, so the check follows what
+# the container reported doing rather than assuming.
+if grep -q '^synthetic-client: copied$' "$run_log"; then
+  ./tools/check-build-artifact.sh "$synth_out_abs"
+fi
+rm -f "$run_log"

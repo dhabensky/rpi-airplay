@@ -164,14 +164,13 @@ def synthetic_client_binary() -> Path:
     talking to."""
     out = REPO_ROOT / "build" / "uxplay-refs" / "_synthetic-client-current" / "uxplay_debug"
     synth = out.parent / "synthetic-client"
-    if synth.exists() and synth.stat().st_size > 0:
-        return synth
-    subprocess.run(["./tools/build-uxplay.sh", str(out)], cwd=REPO_ROOT, check=True)
-    if not synth.exists() or synth.stat().st_size == 0:
-        raise RuntimeError(
-            f"tools/build-uxplay.sh didn't produce {synth} -- is UxPlay/tools/synthetic-client.cpp "
-            f"(and its CMakeLists.txt target) present in the current working tree?"
-        )
+    if not synth.exists():
+        subprocess.run(["./tools/build-uxplay.sh", str(out)], cwd=REPO_ROOT, check=True)
+    # build-uxplay.sh only asserts this artifact for refs whose tree has the
+    # target; this fixture always builds the current tree, which must have it.
+    subprocess.run(
+        ["./tools/check-build-artifact.sh", str(synth)], cwd=REPO_ROOT, check=True,
+    )
     return synth
 
 
