@@ -90,6 +90,12 @@ modprobe bcm2835-codec || echo "    (modprobe failed -- reboot required to load 
 echo "==> Masking getty on tty1 (stops it fighting uxplay for console/DRM master)"
 systemctl mask getty@tty1.service
 
+echo "==> Quieting the console: the boot log still renders, but past that only"
+echo "    a panic may repaint /dev/fb0 over the idle menu or a session"
+install -m 0644 ../image-builder/files/etc/sysctl.d/99-quiet-console.conf \
+  /etc/sysctl.d/99-quiet-console.conf
+systemctl restart systemd-sysctl.service
+
 echo "==> Creating the uxplay service user"
 if ! id uxplay >/dev/null 2>&1; then
   useradd -r -M -s /usr/sbin/nologin -G audio,video,render,input uxplay

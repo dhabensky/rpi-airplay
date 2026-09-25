@@ -46,6 +46,8 @@ echo "    somewhere for debugging. zero-fb0-late.service re-zeros /dev/fb0"
 echo "    once boot console output has genuinely stopped, and"
 echo "    uxplay-menu-render then paints the idle menu over that -- see"
 echo "    docs/framebuffers-and-drm-planes.md for why this ordering is safe."
+echo "    Past that point only a panic may reach the screen: see the shipped"
+echo "    /etc/sysctl.d/99-quiet-console.conf."
 
 echo "==> Adding vt.global_cursor_default=0 (fbcon draws its own blinking VT"
 echo "    cursor in the top-left corner independent of console=tty1; this"

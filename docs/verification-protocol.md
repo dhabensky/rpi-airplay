@@ -67,9 +67,12 @@ explicitly.
   time source is reachable. The device has no RTC: its clock can be days
   off until someone pushes the time from the host.
 - `console=tty1` is deliberate (the boot log must render), so kernel
-  messages repaint `/dev/fb0` — which is DRM plane 86. **Any plane-hash
-  measurement must quiet `printk` first** (`1 4 1 7`) and restore it
-  (`4 4 1 7`) afterwards, or the hashes are noise.
+  messages would repaint `/dev/fb0` — which is DRM plane 86 — over anything
+  drawn there. The image ships `/etc/sysctl.d/99-quiet-console.conf`
+  (`kernel.printk = 1 4 1 7`), so after boot only a panic reaches the
+  screen. **Before trusting a plane hash, check `cat
+  /proc/sys/kernel/printk` starts with `1`**: on a device without that file
+  (or after raising the level by hand) the hashes are noise.
 
 ## Cost discipline
 
