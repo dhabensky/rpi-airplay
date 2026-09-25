@@ -7,23 +7,23 @@
 # Run from the Mac (matches every other Pi interaction in this project --
 # no SSH/build tooling is expected on the Pi itself).
 #
-# Usage: golden-reference/capture.sh [user@host]  (default: root@192.168.1.34)
+# Usage: golden-reference/capture.sh [user@host]
+#   No argument: whatever tools/pissh targets (UXPLAY_PI_HOST, else the device
+#   documented in docs/verification-protocol.md).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-TARGET="${1:-root@192.168.1.34}"
 DATE=$(date +%Y-%m-%d)
 OUT="golden-reference/snapshots/$DATE"
 mkdir -p "$OUT"
 
-# No SSH key is provisioned on the Pi (password auth only, per README) --
-# use sshpass if SSHPASS is set (matches every other Pi interaction in this
-# project), otherwise fall back to plain ssh in case a key IS set up.
-if [ -n "${SSHPASS:-}" ]; then
-  ssh_cmd() { sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$TARGET" "$@"; }
-else
-  ssh_cmd() { ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$TARGET" "$@"; }
-fi
+# Every remote read goes through tools/pissh, so the address, the password and
+# the host-key policy stay in one place: keys go to a disposable
+# build/pissh-known-hosts, and a reflashed device is cleared with `pissh -k`.
+[ $# -eq 0 ] || export UXPLAY_PI_HOST="$1"
+# Hashing the whole rootfs (13k+ files) outlasts pissh's 120s default bound.
+export UXPLAY_SSH_TIMEOUT="${UXPLAY_SSH_TIMEOUT:-900}"
+ssh_cmd() { tools/pissh "$@"; }
 
 echo "==> Package manifest"
 ssh_cmd 'dpkg --get-selections' > "$OUT/package-manifest.txt"

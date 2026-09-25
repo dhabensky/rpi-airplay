@@ -33,8 +33,10 @@ def pytest_addoption(parser):
              "flag / against HEAD (expect PASS).",
     )
     parser.addoption(
-        "--pi-host", default=os.environ.get("UXPLAY_PI_HOST", "root@192.168.1.34"),
-        help="user@host for tests marked pi_hardware.",
+        "--pi-host", default=None,
+        help="user@host for tests marked pi_hardware. Default: whatever "
+             "tools/pissh targets (UXPLAY_PI_HOST, else the device in "
+             "docs/verification-protocol.md), resolved when a test needs it.",
     )
     parser.addoption(
         "--pi-password", default=os.environ.get("UXPLAY_SSH_PASSWORD", "dietpi"),
@@ -311,10 +313,20 @@ class PiTarget:
         return False
 
 
+def _pissh_host() -> str:
+    """tools/pissh holds the device's address; `-t` prints it without touching
+    the network, so asking it here keeps one source for the whole repo (an
+    addoption default would have to run at collection time, on every run)."""
+    r = subprocess.run(
+        ["tools/pissh", "-t"], cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+    )
+    return r.stdout.strip()
+
+
 @pytest.fixture(scope="session")
 def pi_target(request) -> PiTarget:
     return PiTarget(
-        host=request.config.getoption("--pi-host"),
+        host=request.config.getoption("--pi-host") or _pissh_host(),
         password=request.config.getoption("--pi-password"),
     )
 

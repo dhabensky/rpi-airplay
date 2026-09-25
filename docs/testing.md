@@ -182,8 +182,10 @@ Scope: everything *except* actual display/decode/audio hardware.
 
 ## Real-Pi regression suites (`pytest -m pi_hardware`)
 
-Requires: SSH access to the live device (`192.168.1.34`, `--pi-host` to
-override), which must be reachable and not mid-use for anything else
+Requires: SSH access to the live device — whatever `tools/pissh` targets
+(`UXPLAY_PI_HOST`, else the address in `docs/verification-protocol.md`),
+with `--pi-host` overriding it for pytest — which must be reachable and
+not mid-use for anything else
 (see memory: `no_live_scripts_during_armed_capture`). Each of these
 stops the live `uxplay.service`, deploys/replays something, then
 restarts it (`pi_uxplay_deployed` fixture, `tools/pytest/conftest.py` --
