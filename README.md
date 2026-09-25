@@ -143,7 +143,13 @@ Two units own the AirPlay receiver and its screen:
   FIFO after a restart. Started by `zero-fb0-late.service`'s `Wants=` (so
   the first paint lands after the boot console has been cleared) and by
   `uxplay.service`'s. It runs as root because the "is a session live?"
-  guard needs `ss -tnp` to see process names.
+  guard needs `ss -tnp` to see process names. Its intervals are read once at
+  startup from `UXPLAY_MENU_REFRESH_SECS`, `UXPLAY_MENU_SETTLE_MS`,
+  `UXPLAY_MENU_RETRY_MS`, `UXPLAY_MENU_OVERSCAN_RETRY_MS`,
+  `UXPLAY_MENU_OVERSCAN_TRIES` and `UXPLAY_MENU_CHILD_LIMIT_MS`, each
+  defaulting to the production value and logged when overridden; the shipped
+  unit sets none, so shortening one for a test means a systemd drop-in with
+  `Environment=` (`WatchdogSec` is systemd's own and needs the same).
 
 Editing `/etc/default/uxplay` on the device takes the overscan margins and
 the menu text live — no restart and no reconnect. `UXPLAY_DISPLAY_NAME` is

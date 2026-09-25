@@ -12,7 +12,9 @@
  * every fd is non-blocking and every wait is bounded, so no consumer or
  * producer of these FIFOs can ever stall this process.
  *
- * Usage: uxplay-menu      (paths are compile-time, see the defines below)
+ * Usage: uxplay-menu      (paths are compile-time, see the defines below;
+ *                         intervals default to the values below and can be
+ *                         overridden per UXPLAY_MENU_*, see tunables_init)
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -52,26 +54,34 @@
 #define RUN_OFIFO_DIR_NAME "uxplay"
 #define CONF_DIR "/etc/default"
 #define CONF_NAME "uxplay"
+/* Watched the way RUN_DIR is, so CONF_DIR being replaced wholesale is
+ * recovered from at once instead of at the next refresh. */
+#define ETC_DIR "/etc"
+#define CONF_DIR_NAME "default"
 #define CONF_PATH CONF_DIR "/" CONF_NAME
 #define RENDER_CMD "/usr/local/bin/uxplay-menu-render"
 
-#define REFRESH_SECS 300
+/* Production values, each overridable from the environment by
+ * tunables_init() so a test need not wait out a five-minute interval. */
+static long refresh_secs = 300;
 /* Collapses a burst of triggers (several inotify events per editor save)
  * into one repaint. */
-#define SETTLE_MS 250
+static long settle_ms = 250;
 /* Measured on the lost-connection path: with the client still holding its
  * RTSP control connection, the guard still sees an ESTAB socket ~0.3s after
  * the event and skips the repaint; that socket is gone by ~1.4s. */
-#define RETRY_MS 1000
+static long retry_ms = 1000;
 /* uxplay creates its -ofifo and opens its own end some way into startup, so
  * a seeding push has to outlast that; a landed push ends the retries. */
-#define OVERSCAN_RETRY_MS 1000
-#define OVERSCAN_TRIES 15
+static long overscan_retry_ms = 1000;
+static long overscan_tries_max = 15;
+/* A renderer that never finishes would stall every later trigger, so it is
+ * killed well past a real repaint (measured on the Pi: 348-360ms). */
+static long child_limit_ms = 30000;
 /* fork() failures are transient (EAGAIN), so back the repaint off instead
  * of spinning on it. */
 #define SPAWN_RETRY_MS 1000
 #define CHILD_POLL_MS 100
-#define CHILD_LIMIT_MS 30000
 
 static void logmsg(const char *fmt, ...) {
     va_list ap;
@@ -86,6 +96,35 @@ static long long now_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (long long) ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+/* A rejected override keeps the default, and every interval has a minimum of
+ * 1, so none can collapse to zero and busy-loop this process. */
+static void tunable(const char *name, long *value, long min, long max) {
+    const char *s = getenv(name);
+    if (!s || !*s) {
+        return;
+    }
+    long v;
+    if (tunable_parse(s, min, max, &v) != 0) {
+        logmsg("ignoring %s=\"%s\": want an integer %ld..%ld, keeping %ld",
+               name, s, min, max, *value);
+        return;
+    }
+    logmsg("override in effect: %s=%ld (default %ld)", name, v, *value);
+    *value = v;
+}
+
+/* Read once at startup; uxplay-menu.service sets none of these. */
+static void tunables_init(void) {
+    tunable("UXPLAY_MENU_REFRESH_SECS", &refresh_secs, 1, 86400);
+    tunable("UXPLAY_MENU_SETTLE_MS", &settle_ms, 1, 60000);
+    tunable("UXPLAY_MENU_RETRY_MS", &retry_ms, 1, 60000);
+    tunable("UXPLAY_MENU_OVERSCAN_RETRY_MS", &overscan_retry_ms, 1, 60000);
+    /* 0 is a real setting here, the same "push once, do not retry" this code
+     * asks for itself on an edit-triggered push. */
+    tunable("UXPLAY_MENU_OVERSCAN_TRIES", &overscan_tries_max, 0, 1000);
+    tunable("UXPLAY_MENU_CHILD_LIMIT_MS", &child_limit_ms, 1, 600000);
 }
 
 /* --- sd_notify, by hand: one datagram to $NOTIFY_SOCKET, so this tool needs
@@ -170,6 +209,7 @@ static int event_fifo_open(void) {
 }
 
 static int wd_conf = -1;
+static int wd_etc = -1;
 static int wd_run = -1;
 static int wd_ofifo_dir = -1;
 
@@ -177,8 +217,8 @@ static void ofifo_dir_watch(int fd) {
     wd_ofifo_dir = inotify_add_watch(fd, OFIFO_DIR, IN_CREATE | IN_MOVED_TO);
 }
 
-/* A watch dies with its directory, so the periodic refresh calls this again
- * once CONF_DIR is back. */
+/* A watch dies with its directory, so wd_etc calls this again the moment
+ * CONF_DIR reappears (the periodic refresh is only the backstop). */
 static int conf_dir_watch(int fd) {
     wd_conf = inotify_add_watch(fd, CONF_DIR,
                                 IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_DELETE |
@@ -198,6 +238,10 @@ static int conf_watch_open(void) {
         logmsg("inotify_add_watch %s failed: %s", CONF_DIR, strerror(errno));
         close(fd);
         return -1;
+    }
+    wd_etc = inotify_add_watch(fd, ETC_DIR, IN_CREATE | IN_MOVED_TO);
+    if (wd_etc < 0) {
+        logmsg("inotify_add_watch %s failed: %s", ETC_DIR, strerror(errno));
     }
     wd_run = inotify_add_watch(fd, RUN_DIR, IN_CREATE | IN_MOVED_TO);
     if (wd_run < 0) {
@@ -250,6 +294,12 @@ static int watch_read(int fd) {
             const char *name = ev->len > 0 ? ev->name : "";
             if (ev->wd == wd_conf && strcmp(name, CONF_NAME) == 0) {
                 seen |= WATCH_CONF;
+            } else if (ev->wd == wd_etc && strcmp(name, CONF_DIR_NAME) == 0) {
+                /* CONF_DIR is back: re-arm and re-read it now. */
+                if (wd_conf < 0) {
+                    conf_dir_watch(fd);
+                }
+                seen |= WATCH_CONF;
             } else if (ev->wd == wd_run && strcmp(name, RUN_OFIFO_DIR_NAME) == 0) {
                 /* The FIFO lands in here moments later; watch for it and let
                  * the push's own retries cover the gap. */
@@ -260,8 +310,9 @@ static int watch_read(int fd) {
             } else if (ev->wd == wd_ofifo_dir && (ev->mask & IN_IGNORED)) {
                 wd_ofifo_dir = -1;
             } else if (ev->wd == wd_conf && (ev->mask & (IN_IGNORED | IN_MOVE_SELF))) {
-                /* CONF_DIR was deleted or moved aside; the periodic refresh
-                 * puts a watch back on the path and re-reads it. */
+                /* CONF_DIR was deleted or moved aside; the ETC_DIR watch
+                 * re-arms this one as soon as the path is back, so the deaf
+                 * window is the settle delay and not a refresh period. */
                 if (ev->mask & IN_MOVE_SELF) {
                     inotify_rm_watch(fd, wd_conf);
                 }
@@ -314,13 +365,13 @@ static int overscan_push(void) {
 
 static long long repaint_at;
 static long long overscan_at;
-static int overscan_tries;
+static long overscan_tries;
 static int repaint_retries;
 static const char *repaint_reason = "startup";
 
 /* Keeps the earliest pending attempt, so repeated triggers coalesce without
  * pushing the repaint further away. */
-static void repaint_schedule(int delay_ms, const char *reason) {
+static void repaint_schedule(long delay_ms, const char *reason) {
     long long when = now_ms() + delay_ms;
     if (repaint_at == 0 || when < repaint_at) {
         repaint_at = when;
@@ -331,7 +382,7 @@ static void repaint_schedule(int delay_ms, const char *reason) {
 /* tries is how many further attempts a failed push may make, bounding the
  * wait for a uxplay that is starting but has not opened its -ofifo yet. An
  * edit gets 0: nothing re-pushes it until the next edit or uxplay restart. */
-static void overscan_schedule(int delay_ms, int tries) {
+static void overscan_schedule(long delay_ms, long tries) {
     long long when = now_ms() + delay_ms;
     if (overscan_at == 0 || when < overscan_at) {
         overscan_at = when;
@@ -359,9 +410,10 @@ int main(void) {
     /* A vanished overscan reader must be an error return, not a death. */
     signal(SIGPIPE, SIG_IGN);
 
+    tunables_init();
     int event_fd = event_fifo_open();
     int conf_fd = conf_watch_open();
-    int refresh_fd = timer_open(REFRESH_SECS * 1000L);
+    int refresh_fd = timer_open(refresh_secs * 1000L);
     if (event_fd < 0 || conf_fd < 0 || refresh_fd < 0) {
         return 1;
     }
@@ -390,7 +442,7 @@ int main(void) {
     logmsg("started; buffered event history ended at %s",
            stale == SESSION_BEGIN ? "session-begin" :
            stale == SESSION_END ? "session-end" : "no complete line");
-    overscan_schedule(0, OVERSCAN_TRIES);
+    overscan_schedule(0, overscan_tries_max);
     repaint_schedule(0, "startup");
 
     pid_t child = -1;
@@ -430,7 +482,7 @@ int main(void) {
             if (fds[idx_event].revents & POLLIN) {
                 if (event_drain_read(&drain, event_fd) == SESSION_END) {
                     repaint_retries = 1;
-                    repaint_schedule(SETTLE_MS, "session end");
+                    repaint_schedule(settle_ms, "session end");
                 }
             }
             if (fds[idx_conf].revents & POLLIN) {
@@ -439,11 +491,11 @@ int main(void) {
                     /* One save can arrive as several inotify events; settle
                      * first so uxplay gets one update and the menu one
                      * repaint. */
-                    overscan_schedule(SETTLE_MS, 0);
-                    repaint_schedule(SETTLE_MS, "config change");
+                    overscan_schedule(settle_ms, 0);
+                    repaint_schedule(settle_ms, "config change");
                 }
                 if (seen & WATCH_OFIFO) {
-                    overscan_schedule(SETTLE_MS, OVERSCAN_TRIES);
+                    overscan_schedule(settle_ms, overscan_tries_max);
                 }
             }
             if (fds[idx_refresh].revents & POLLIN) {
@@ -451,7 +503,7 @@ int main(void) {
                 /* A re-armed watch means CONF_DIR is back, so re-read what is
                  * in it now; the repaint below covers the menu text. */
                 if (wd_conf < 0 && conf_dir_watch(conf_fd) >= 0) {
-                    overscan_schedule(SETTLE_MS, 0);
+                    overscan_schedule(settle_ms, 0);
                 }
                 repaint_schedule(0, "periodic refresh");
             }
@@ -467,7 +519,7 @@ int main(void) {
                 overscan_tries = 0;
             } else if (overscan_tries > 0) {
                 overscan_tries--;
-                overscan_at = now_ms() + OVERSCAN_RETRY_MS;
+                overscan_at = now_ms() + overscan_retry_ms;
             }
         }
 
@@ -487,12 +539,12 @@ int main(void) {
                 child = -1;
                 if (repaint_retries > 0) {
                     repaint_retries--;
-                    repaint_schedule(RETRY_MS, "session end, retry");
+                    repaint_schedule(retry_ms, "session end, retry");
                 }
-            } else if (now_ms() - child_started > CHILD_LIMIT_MS) {
+            } else if (now_ms() - child_started > child_limit_ms) {
                 /* A wedged renderer would silently stop every later repaint
                  * while this process still looks healthy. */
-                logmsg("%s exceeded %dms, killing it", RENDER_CMD, CHILD_LIMIT_MS);
+                logmsg("%s exceeded %ldms, killing it", RENDER_CMD, child_limit_ms);
                 kill(child, SIGKILL);
             }
         }

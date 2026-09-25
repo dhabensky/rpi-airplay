@@ -2,7 +2,9 @@
  * not control: uxplay's event FIFO and /etc/default/uxplay. Both are parsed
  * here against a real FIFO and real files -- a drain that loses a line split
  * across reads, or a config read that mistakes a comment for a value, would
- * repaint over a live session or push the wrong overscan margins. */
+ * repaint over a live session or push the wrong overscan margins. Its
+ * UXPLAY_MENU_* interval overrides are parsed here too: a half-parsed value
+ * would either busy-loop the daemon or silently ignore what a test asked for. */
 #include <assert.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -33,6 +35,26 @@ static void expect_overscan(const char *body, const char *expected) {
     if (strcmp(out, expected) != 0) {
         fprintf(stderr, "FAIL: config \"%s\" composed \"%s\", expected \"%s\"\n",
                 body, out, expected);
+        exit(1);
+    }
+}
+
+/* The daemon keeps its default on a refusal, so "refused" must never come back
+ * with a value written; kept is what it would have kept. */
+static void expect_tunable_refused(const char *s, long min, long max) {
+    long v = 4242;
+    if (tunable_parse(s, min, max, &v) == 0 || v != 4242) {
+        fprintf(stderr, "FAIL: tunable_parse(\"%s\", %ld, %ld) accepted it as %ld\n",
+                s ? s : "(null)", min, max, v);
+        exit(1);
+    }
+}
+
+static void expect_tunable_ok(const char *s, long min, long max, long expected) {
+    long v = 4242;
+    if (tunable_parse(s, min, max, &v) != 0 || v != expected) {
+        fprintf(stderr, "FAIL: tunable_parse(\"%s\", %ld, %ld) gave %ld, expected %ld\n",
+                s, min, max, v, expected);
         exit(1);
     }
 }
@@ -152,6 +174,35 @@ int main(void) {
     expect_overscan("UXPLAY_OVERSCAN_LEFT=4\nUXPLAY_OVERSCAN_LEFT=9\n", "9 0 0 0\n");
     expect_overscan("UXPLAY_OVERSCAN_LEFT=-4\n", "-4 0 0 0\n");
 
+    /* --- the UXPLAY_MENU_* overrides --- */
+
+    /* A valid override in range, and the bounds themselves. */
+    expect_tunable_ok("5", 1, 86400, 5);
+    expect_tunable_ok("1", 1, 86400, 1);
+    expect_tunable_ok("86400", 1, 86400, 86400);
+
+    /* Junk of every shape keeps the default rather than half-parsing: no
+     * value, no digits, trailing text or unit, a float, whitespace. */
+    expect_tunable_refused(NULL, 1, 60000);
+    expect_tunable_refused("", 1, 60000);
+    expect_tunable_refused("later", 1, 60000);
+    expect_tunable_refused("5s", 1, 60000);
+    expect_tunable_refused("5 ", 1, 60000);
+    expect_tunable_refused(" 5", 1, 60000);
+    expect_tunable_refused("2.5", 1, 60000);
+    expect_tunable_refused("0x10", 1, 60000);
+    expect_tunable_refused("99999999999999999999", 1, 60000);
+
+    /* Out of range either way, including the values just outside it. */
+    expect_tunable_refused("0", 1, 60000);
+    expect_tunable_refused("-1", 1, 60000);
+    expect_tunable_refused("60001", 1, 60000);
+
+    /* Zero is a real setting for the overscan retry budget (push once, do not
+     * retry) and the only knob whose minimum is 0. */
+    expect_tunable_ok("0", 0, 1000, 0);
+    expect_tunable_refused("-1", 0, 1000);
+
     /* A buffer that cannot hold the line must be reported, never truncated
      * into a different update. */
     write_conf("UXPLAY_OVERSCAN_LEFT=1000\nUXPLAY_OVERSCAN_RIGHT=1000\n"
@@ -162,7 +213,8 @@ int main(void) {
     unlink(fifo_path);
     unlink(conf_path);
     printf("PASS: event drain correct across %ld buffered transitions, split, "
-           "unknown and over-long lines; overscan composed from 10 config shapes\n",
+           "unknown and over-long lines; overscan composed from 10 config shapes; "
+           "17 UXPLAY_MENU_* override strings accepted or refused as intended\n",
            queued * 2);
     return 0;
 }

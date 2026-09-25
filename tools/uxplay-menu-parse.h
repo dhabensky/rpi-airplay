@@ -26,6 +26,11 @@ struct event_drain {
  * last complete line's state. Unrecognized and over-long lines are ignored. */
 enum session_state event_drain_read(struct event_drain *drain, int fd);
 
+/* Parses one interval/budget override: a plain integer in min..max, nothing
+ * else (no unit suffix, no whitespace, no partial parse). Returns 0 and sets
+ * out on success, -1 otherwise, leaving out alone. */
+int tunable_parse(const char *s, long min, long max, long *out);
+
 /* Composes uxplay's -ofifo update line ("l r t b\n") from conf_path's
  * UXPLAY_OVERSCAN_{LEFT,RIGHT,TOP,BOTTOM}; a missing file, key or value
  * leaves that margin at 0. Returns 0, or -1 if out is too small. */

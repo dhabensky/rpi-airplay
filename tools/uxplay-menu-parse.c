@@ -35,6 +35,24 @@ enum session_state event_drain_read(struct event_drain *drain, int fd) {
     return last;
 }
 
+int tunable_parse(const char *s, long min, long max, long *out) {
+    if (!s || !*s) {
+        return -1;
+    }
+    /* strtol would skip leading whitespace and accept the rest. */
+    if (*s != '-' && (*s < '0' || *s > '9')) {
+        return -1;
+    }
+    char *end;
+    errno = 0;
+    long v = strtol(s, &end, 10);
+    if (errno != 0 || *end != '\0' || v < min || v > max) {
+        return -1;
+    }
+    *out = v;
+    return 0;
+}
+
 /* Matches one "KEY=value" shell assignment, tolerating leading whitespace
  * and a quoted value; anything else (comment, other key, non-integer) is
  * left for the caller's default. */
