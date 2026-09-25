@@ -199,8 +199,22 @@ make uxplay
 # or directly: ./tools/build-uxplay.sh build/uxplay_debug
 ```
 
-Or just run `tools/deploy.sh`, which does the above and copies
-the result to a Pi over SSH.
+## Deploying to an already-provisioned Pi
+
+```bash
+make deploy                 # every binary the image ships
+make deploy-uxplay-menu     # just one (see the Makefile for the other five)
+```
+
+Builds whatever is stale through the same file targets `make image` uses,
+pushes each binary through `tools/pissh`, and prints the `sha256` it
+verified on the device. Only the unit that runs the pushed binary is
+restarted — `uxplay.service` for `uxplay_debug` and `log-ts`,
+`uxplay-menu.service` for `uxplay-menu`, nothing for `menu-render`,
+`drmdump` or `synthetic-client` — and a binary the device already has
+byte-identical is skipped, restart included, since restarting
+`uxplay.service` drops a live mirroring session. `make deploy DRY_RUN=1`
+prints what each step would do and touches no network.
 
 ## Building and flashing a complete image
 

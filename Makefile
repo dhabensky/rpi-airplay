@@ -180,6 +180,46 @@ image-xz: build/rpi-airplay.img
 	sha256sum build/rpi-airplay.img.xz > build/rpi-airplay.img.xz.sha256
 	@echo "Built build/rpi-airplay.img.xz"
 
+# --- deploying to the already-provisioned live Pi (tools/pissh's target) ---
+# The fast path for iterating without a reflash. Each target builds through
+# the file target above, so staleness is decided in one place, and restarts
+# only the unit that actually runs that binary.
+#
+# `make deploy` pushes everything the image ships; the per-artifact targets
+# are for a single binary (deploy-uxplay-menu is the common one). A push whose
+# sha256 already matches the device is skipped, restart included.
+# DRY_RUN=1 prints each plan and touches no network.
+.PHONY: deploy deploy-uxplay deploy-uxplay-menu deploy-menu-render deploy-log-ts \
+        deploy-drmdump deploy-synthetic-client
+export DRY_RUN
+
+# The two that restart a unit come last, so the units come back up against a
+# fully updated set of binaries.
+deploy: deploy-menu-render deploy-drmdump deploy-synthetic-client \
+        deploy-uxplay-menu deploy-log-ts deploy-uxplay
+
+deploy-uxplay: build/uxplay_debug
+	./tools/deploy-artifact.sh $< /usr/local/bin/uxplay_debug uxplay.service
+
+# log-ts is uxplay.service's ExecStart (it runs uxplay_debug), so a new one
+# only takes effect when that unit restarts.
+deploy-log-ts: build/bin/log-ts
+	./tools/deploy-artifact.sh $< /usr/local/bin/log-ts uxplay.service
+
+deploy-uxplay-menu: build/bin/uxplay-menu
+	./tools/deploy-artifact.sh $< /usr/local/bin/uxplay-menu uxplay-menu.service
+
+# menu-render is exec'd per repaint, drmdump and synthetic-client are run by
+# hand: nothing resident to restart.
+deploy-menu-render: build/bin/menu-render
+	./tools/deploy-artifact.sh $< /usr/local/bin/menu-render
+
+deploy-drmdump: build/bin/drmdump
+	./tools/deploy-artifact.sh $< /usr/local/bin/drmdump
+
+deploy-synthetic-client: build/synthetic-client
+	./tools/deploy-artifact.sh $< /usr/local/bin/synthetic-client
+
 # --- .PHONY targets: live-Pi-touching, always-rerun, or deliberate/rare actions ---
 golden-reference:
 	./golden-reference/capture.sh

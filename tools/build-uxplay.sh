@@ -2,8 +2,9 @@
 # Builds uxplay_debug (and tools/synthetic-client.cpp's binary, alongside
 # it in the same directory) against the shared Dockerfile tooling image,
 # writing the result to the given output path. One build recipe shared by
-# `make uxplay`, tools/deploy.sh, and tools/verify-reproducible-build.sh,
-# instead of each carrying its own copy of the same docker invocation.
+# `make uxplay`, tools/verify-reproducible-build.sh and tools/pytest's
+# uxplay_binary fixture, instead of each carrying its own copy of the same
+# docker invocation.
 #
 # UxPlay/ is bind-mounted read-only and copied to a container-local path
 # (/src/UxPlay) before building -- keeps the host's submodule checkout

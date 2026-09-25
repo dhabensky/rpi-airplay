@@ -1,6 +1,6 @@
 # All build and test artifacts (compiled binaries, images, captures, logs,
 # diagnostic dumps) live under build/ -- rebuild/reproduce via the Makefile
-# or tools/deploy.sh instead of committing any of it.
+# or `make deploy` instead of committing any of it.
 build/
 
 # Large diagnostic dumps / captured test sessions -- useful for a specific
