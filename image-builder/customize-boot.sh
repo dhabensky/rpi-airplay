@@ -1,9 +1,6 @@
 #!/bin/bash
 # Customizes the extracted boot (FAT32) partition directory: applies the
-# config.txt/cmdline.txt tuning this deployment needs. tools/compare-
-# rebuild.sh's Tier B diffs this partition against
-# golden-reference/snapshots/*/config/boot-config.txt (a verbatim capture
-# of the live Pi's actual file) to confirm these are the only lines that
+# config.txt/cmdline.txt tuning this deployment needs -- the only lines that
 # differ from the pristine base image's own config.txt/cmdline.txt.
 #
 # Usage: image-builder/customize-boot.sh <boot-dir> [personal-env-file]
@@ -27,8 +24,8 @@ echo "    pipeline would fail to display anything at all on real hardware."
 sed -i 's/^#dtoverlay=vc4-kms-v3d,noaudio$/dtoverlay=vc4-kms-v3d/' "$bootdir/config.txt"
 
 echo "==> Matching the (inert, both commented-out) overclock example values too"
-echo "    -- purely cosmetic byte-parity with golden-reference, no functional"
-echo "    effect either way since both are comments"
+echo "    -- these match the values the live Pi's own config.txt carries; no"
+echo "    functional effect either way since both are comments"
 sed -i \
   -e 's/^#arm_freq=.*/#arm_freq=1400/' \
   -e 's/^#core_freq=.*/#core_freq=400/' \

@@ -1,3 +1,6 @@
+# `dpkg --get-selections` from the live Pi, 2026-09-14: the package set the
+# target already has, so tools/vendor-gstreamer-closure.sh vendors only files
+# nothing there provides. Refresh by re-running that command on the device.
 adduser						install
 apt						install
 avahi-daemon					install

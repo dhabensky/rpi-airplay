@@ -153,8 +153,6 @@ Requires: Docker only.
   failure path prints.
 - **`tools/vendor-gstreamer-closure.sh`** — computes/vendors the minimal
   GStreamer plugin closure; a build-time tool, not a pass/fail test.
-- **`tools/compare-rebuild.sh`** — tiered comparison of a built image
-  against a golden-reference snapshot (partition-level, no boot).
 - **`image-builder/refresh-apt-lists.sh`** — rare/deliberate: captures a
   fresh `apt-get update` snapshot into `image-builder/apt-lists/`, the
   frozen index `customize-root.sh` installs against instead of querying

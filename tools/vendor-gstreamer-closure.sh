@@ -10,7 +10,7 @@
 # allowlisted plugin's `ldd` closure (which is already the full
 # transitive dependency set -- no manual recursion needed), then vendor only
 # the files whose owning Debian package is NOT already going to be present
-# on the target Pi (per a package manifest, e.g. golden-reference's).
+# on the target Pi (per the package manifest passed in).
 #
 # Two install locations matter and are kept separate:
 #   plugins/ -> GStreamer plugin .so files (loaded from .../gstreamer-1.0/
@@ -31,7 +31,7 @@
 #
 # Usage: tools/vendor-gstreamer-closure.sh <target-package-manifest> [output-dir]
 #   target-package-manifest: `dpkg --get-selections` output from the target
-#                            (e.g. golden-reference/snapshots/<date>/package-manifest.txt)
+#                            (tools/target-package-manifest.txt)
 #   output-dir: default build/vendor-gstreamer
 set -euo pipefail
 cd "$(dirname "$0")/.."

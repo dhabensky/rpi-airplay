@@ -1,12 +1,10 @@
 # Build system for rpi-airplay -- see the plan/README for the full
 # rationale. `make image` produces a complete, ready-to-flash .img from a
-# clean checkout; `make verify` checks it against a golden-reference
-# capture from the live Pi. Everything here calls into plain shell/Docker
-# recipes under tools/ and image-builder/ -- this file is the dependency
-# graph and the one documented entry point, not where the actual logic
-# lives.
+# clean checkout. Everything here calls into plain shell/Docker recipes
+# under tools/ and image-builder/ -- this file is the dependency graph and
+# the one documented entry point, not where the actual logic lives.
 .PHONY: image image-xz uxplay menu-render uxplay-menu drmdump synthetic-client \
-        vendor-gstreamer base-image golden-reference verify \
+        vendor-gstreamer base-image \
         reproducible-check refresh-base-image refresh-apt-lists refresh-buildenv-apt-lists \
         test-boot test-eth-backup test-resize clean
 
@@ -106,15 +104,10 @@ build/bin/drmdump: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/
 	@./tools/check-build-artifact.sh $@
 
 # --- vendor GStreamer closure ---
-# Depends on a golden-reference package manifest to compute the delta
-# against (see EXCLUDE-LIST.md / capture.sh) -- uses the most recent
-# snapshot found under golden-reference/snapshots/.
-LATEST_SNAPSHOT := $(shell ls -d golden-reference/snapshots/*/ 2>/dev/null | sort | tail -1)
-build/vendor-gstreamer/MANIFEST.md: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/gstreamer-plugin-allowlist.txt tools/vendor-gstreamer-closure.sh
-	@if [ -z "$(LATEST_SNAPSHOT)" ]; then \
-	  echo "ERROR: no golden-reference snapshot found -- run 'make golden-reference' first" >&2; exit 1; \
-	fi
-	./tools/vendor-gstreamer-closure.sh "$(LATEST_SNAPSHOT)package-manifest.txt" build/vendor-gstreamer
+# Only the files no package already puts on the target get vendored, so this
+# needs the target's own package list: tools/target-package-manifest.txt.
+build/vendor-gstreamer/MANIFEST.md: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/gstreamer-plugin-allowlist.txt tools/target-package-manifest.txt tools/vendor-gstreamer-closure.sh
+	./tools/vendor-gstreamer-closure.sh tools/target-package-manifest.txt build/vendor-gstreamer
 
 # --- base DietPi image: our own pinned, versioned copy (see image-builder/BASE-IMAGE.env) ---
 build/dietpi-base.img: image-builder/BASE-IMAGE.env image-builder/fetch-base.sh
@@ -175,9 +168,8 @@ build/rpi-airplay.img: build/uxplay_debug build/bin/menu-render build/bin/uxplay
 
 # Rare, deliberate action -- compress (+ checksum) an already-built image,
 # e.g. to archive or share a specific build. Never a dependency of routine
-# targets (image/verify/test-boot/test-resize all use the raw .img and
-# don't need a checksum sidecar -- make verify's own compare-rebuild.sh
-# already computes its own sha256 of the built image for its report).
+# targets (image/test-boot/test-resize all use the raw .img and don't need
+# a checksum sidecar).
 image-xz: build/rpi-airplay.img
 	sha256sum build/rpi-airplay.img > build/rpi-airplay.img.sha256
 	xz -f -k build/rpi-airplay.img
@@ -226,12 +218,6 @@ deploy-synthetic-client: build/synthetic-client
 	./tools/deploy-artifact.sh $< /usr/local/bin/synthetic-client
 
 # --- .PHONY targets: live-Pi-touching, always-rerun, or deliberate/rare actions ---
-golden-reference:
-	./golden-reference/capture.sh
-
-verify: build/rpi-airplay.img
-	./tools/compare-rebuild.sh build/rpi-airplay.img "$(LATEST_SNAPSHOT)"
-
 reproducible-check:
 	./tools/verify-reproducible-build.sh
 
@@ -255,10 +241,10 @@ refresh-buildenv-apt-lists:
 # Fast local functional check without an SD card: boots the built image's
 # root filesystem via systemd-nspawn on colima's own VM (real aarch64 Linux,
 # no emulation) and checks that services start and uxplay_debug gets as far
-# as the real-hardware boundary (V4L2 decoder/VC4 GPU) cleanly. Does NOT
-# replace Tier D -- no GPU/display/HDMI-audio/network-adapter emulation, so
-# actual AirPlay sessions and hardware-decode performance still need the
-# real Pi. See tools/nspawn-test-boot.sh for what's actually being checked.
+# as the real-hardware boundary (V4L2 decoder/VC4 GPU) cleanly. No GPU/
+# display/HDMI-audio/network-adapter emulation, so actual AirPlay sessions
+# and hardware-decode performance still need the real Pi. See
+# tools/nspawn-test-boot.sh for what's actually being checked.
 test-boot: build/rpi-airplay.img
 	colima ssh -- bash -c 'dpkg -s systemd-container >/dev/null 2>&1 || (sudo apt-get update -qq && sudo apt-get install -y -qq systemd-container)'
 	colima ssh -- sudo bash -s -- < tools/nspawn-test-boot.sh

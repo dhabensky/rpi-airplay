@@ -113,15 +113,15 @@ if echo "$uxplay_log" | grep -q "error while loading shared libraries"; then
   echo "$uxplay_log" | grep "error while loading shared libraries"
   fail=1
 elif echo "$uxplay_log" | grep -qi "permission denied"; then
-  echo "FAIL: permission denied somewhere -- check ownership (see REBUILD-STATUS.md's virtiofs/ownership note):"
+  echo "FAIL: permission denied somewhere -- check ownership (see the Makefile's named-volume/virtiofs note):"
   echo "$uxplay_log" | grep -i "permission denied"
   fail=1
 elif echo "$uxplay_log" | grep -q 'no element "v4l2h264dec"'; then
   echo "PASS (expected hardware boundary): binary starts, loads all libraries,"
   echo "  fails only on the real V4L2 hardware decoder element, which doesn't"
   echo "  exist without actual RPi silicon. This is as far as this test can"
-  echo "  (or should) go -- Tier D functional/performance testing still needs"
-  echo "  the real Pi."
+  echo "  (or should) go -- functional/performance testing still needs the"
+  echo "  real Pi."
 else
   echo "UNKNOWN: uxplay_debug didn't fail the expected way -- inspect manually:"
   echo "$uxplay_log" | tail -20
@@ -186,7 +186,7 @@ else
   # shared network, not a real product bug. The actual capability is
   # already verified against real hardware: a live `dns-sd -B _airplay._tcp`
   # from an actual Mac against the actual Pi found "Living Room TV@rpi-
-  # airplay" with fully correct TXT records (see REBUILD-STATUS.md).
+  # airplay" with fully correct TXT records.
   # Not blocking make test-boot's exit code on an unresolved environment
   # flake for an already-proven-working capability.
   echo "WARN: _airplay._tcp/_raop._tcp not seen via avahi-browse in this nspawn"

@@ -34,10 +34,9 @@ surviving seeks — does.
   fork's own `-capture`/`-replay` flags write, for inspecting or
   extracting the H.264 elementary stream from a recorded session.
 - `Makefile` — the actual build system. `make image` produces a complete,
-  ready-to-flash `build/rpi-airplay.img` from a clean checkout; `make
-  verify` compares it against a `golden-reference/` capture of the live
-  Pi. See "Building and flashing a complete image" below. The raw `.img`
-  is the only artifact routine builds produce — no xz compression, since
+  ready-to-flash `build/rpi-airplay.img` from a clean checkout. See
+  "Building and flashing a complete image" below. The raw `.img` is the
+  only artifact routine builds produce — no xz compression, since
   every consumer of it (`dd`, the local test harnesses) uses it
   uncompressed; `make image-xz` compresses an already-built image on
   demand for the rare case of actually needing to archive/share one.
@@ -46,8 +45,8 @@ surviving seeks — does.
   (`uxplay_debug`, `rpi-airplay.img`, `dietpi-base.img`,
   `vendor-gstreamer/`); everything else is sorted into `bin/` (diagnostic
   tool binaries), `logs/` (debug/replay/reconnect run logs), `pcaps/`
-  (raw packet captures + decode tooling), `images/` (calibration/
-  verification screenshots), and `compare/` (`make verify` output).
+  (raw packet captures + decode tooling), and `images/` (calibration/
+  verification screenshots).
 - `image-builder/` — the offline image-assembly pipeline, self-contained:
   extracts the base DietPi image's partitions to plain directories,
   customizes the root filesystem via `chroot`, rebuilds partition
@@ -64,15 +63,11 @@ surviving seeks — does.
   that file's header for how to regenerate it when a deliberate version
   bump is wanted. A persistent Docker volume caches downloaded `.deb`s
   across builds so re-fetching unchanged packages isn't paid every time.
-- `golden-reference/` — captures the live Pi's actual state (package
-  list, file-tree content hashes, redacted config) so a rebuilt image can
-  be compared against it. `EXCLUDE-LIST.md` documents what's deliberately
-  excluded (volatile paths, WiFi PSK — never captured verbatim).
 - `tools/` (besides `capx.c`) — reproducibility tooling
-  (`vendor-gstreamer-closure.sh` regenerates `vendor/`,
-  `verify-reproducible-build.sh` is a double-build hash check,
-  `compare-rebuild.sh` is the `make verify` recipe) plus three scripts for
-  the live-Pi-over-SSH path, independent of `image-builder/`'s
+  (`vendor-gstreamer-closure.sh` regenerates `vendor/` from the plugin
+  allowlist plus `target-package-manifest.txt`,
+  `verify-reproducible-build.sh` is a double-build hash check) plus three
+  scripts for the live-Pi-over-SSH path, independent of `image-builder/`'s
   from-scratch image assembly: `pissh` is the multiplexed SSH entry point
   everything else uses (run a command, `-s` a script on stdin, `-p`/`-g`
   to copy a file; every call is bounded by `UXPLAY_SSH_TIMEOUT` seconds so
@@ -81,11 +76,6 @@ surviving seeks — does.
   (idempotent, safe to re-run), and `deploy.sh` builds and pushes just the
   `uxplay_debug` binary to a Pi that's already set up — the fast path for
   iterating without a reflash.
-- `REBUILD-STATUS.md` — tier definitions plus the newest dated entries,
-  one per `make verify` run, with every Tier A/B/C delta either fixed or
-  explicitly justified. Read the latest entry before assuming a build
-  matches the live Pi. Older runs are verbatim under
-  `docs/archive/REBUILD-STATUS-<from>--<to>.md`.
 
 ## Hardware / network facts
 
@@ -263,11 +253,7 @@ Produces `build/rpi-airplay.img` (~1.1GB, uncompressed — this project
 never distributes/downloads this file, only `dd`s it directly, so xz
 compression would be pure wasted time on every rebuild; `make image-xz`
 compresses one on demand if a build ever actually needs archiving) plus a
-`.sha256` sidecar. `make verify` compares the build against the most
-recent `golden-reference/` capture and appends a dated entry to
-`REBUILD-STATUS.md` — read that file's latest entry for the current,
-itemized list of known/accepted deltas before assuming a build is
-equivalent to the live Pi.
+`.sha256` sidecar.
 
 ### 2. Back up the current card first (if you only have one)
 
@@ -305,10 +291,9 @@ as the volume stays mounted, so there's no point trying to clean it up.
 ### 4. WiFi — skip this if you set WIFI_SSID/WIFI_PASSWORD in personal.env
 
 Only needed if step 0 was skipped. The image ships with no WiFi
-credentials by default (not even in `golden-reference/`, which stores only
-a redacted template — see `EXCLUDE-LIST.md`). Before the first real boot,
-mount the boot partition (`/dev/disk4s1`, FAT32 — auto-mounts on macOS)
-and fill in one entry of `dietpi-wifi.txt`:
+credentials by default. Before the first real boot, mount the boot
+partition (`/dev/disk4s1`, FAT32 — auto-mounts on macOS) and fill in one
+entry of `dietpi-wifi.txt`:
 
 ```
 aWIFI_SSID[0]='YourSSID'
@@ -341,8 +326,7 @@ This exact tool caught a real bug during development: `uxplay_debug`
 silently depends on `libplist-2.0.so.4`, which wasn't tracked by any
 package install *or* by `vendor/`'s GStreamer closure (that closure only
 walks GStreamer plugins' own dependencies, not the main executable's) —
-invisible to `make verify`'s Tier A/B, only surfaced by actually trying to
-run the binary.
+only surfaced by actually trying to run the binary.
 
 It also separately checks that UxPlay's **software** decode path
 (`-avdec`, GStreamer's `avdec_h264`, with `fakesink` standing in for the
@@ -410,8 +394,7 @@ verification (AirPlay discovery, A/V sync).
    `docs/archive/PROGRESS-2026-09-06--2026-09-12.md` (the A/V-sync and
    `force-modesetting` entries), not from anything self-evident in the
    code — don't "simplify" these without reading that history first.
-4. **Tier D (an actual flash + boot + AirPlay session) is the only
-   remaining unverified step in `REBUILD-STATUS.md`.** Package manifest,
-   file-tree content, and binary-exact checks (Tiers A–C) all pass or
-   have an explicit, justified accepted delta — read that file's latest
-   entry for the current list.
+4. **Nothing automated checks an assembled image beyond the local
+   harnesses.** `make test-boot`/`test-resize`/`test-eth-backup` cover
+   what a container and a loop device can; a real flash, boot and AirPlay
+   session on the Pi is the acceptance test and stays a manual step.

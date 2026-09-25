@@ -69,14 +69,11 @@ echo "==> Installing packages, pinned to image-builder/apt-packages.lock (avahi-
 # libplist-2.0-4: ALSO not optional and found the same way ldd/dpkg both
 # missed it -- it's a direct link-time dependency of uxplay_debug itself
 # (not a GStreamer plugin, so tools/vendor-gstreamer-closure.sh's ldd walk,
-# which only starts from plugin .so files, never covers it), and it was
-# never dpkg-installed on the live Pi either (no Tier A diff), so this was a
-# silent, untracked manual file placement -- invisible in Tier B's own
-# output too, since a missing file just inflates the "golden-only paths"
-# aggregate count without ever being listed individually. Only found by
-# actually trying to run the binary (systemd-nspawn boot test, see
-# REBUILD-STATUS.md) -- "error while loading shared libraries:
-# libplist-2.0.so.4: cannot open shared object file".
+# which only starts from plugin .so files, never covers it), and it was never
+# dpkg-installed on the live Pi either -- a silent, untracked manual file
+# placement. Only found by actually trying to run the binary (systemd-nspawn
+# boot test) -- "error while loading shared libraries: libplist-2.0.so.4:
+# cannot open shared object file".
 # tcpdump: genuinely useful for AirPlay protocol debugging (see PROGRESS.md's
 # tcpdump-replay experiments), not incidental cruft from an old session --
 # kept intentionally.

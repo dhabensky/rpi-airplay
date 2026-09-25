@@ -27,7 +27,7 @@ apt-get update
 # missed it -- a direct link-time dependency of uxplay_debug itself (not a
 # GStreamer plugin, so vendor-gstreamer-closure.sh's ldd walk never covers
 # it), never dpkg-installed here either, so it was a silent untracked file.
-# Only found by an actual systemd-nspawn boot test (see REBUILD-STATUS.md).
+# Only found by an actual systemd-nspawn boot test.
 # tcpdump: genuinely useful for AirPlay protocol debugging (see PROGRESS.md's
 # tcpdump-replay experiments), not incidental cruft -- kept intentionally.
 apt-get install -y avahi-daemon ffmpeg gdb libavahi-compat-libdnssd1 libplist-2.0-4 tcpdump

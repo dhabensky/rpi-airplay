@@ -36,6 +36,6 @@ split by concern so each stays independently readable:
 See **[bugs/](bugs/)** for specific bug investigations (one file per bug:
 symptom, root cause, fix, verification). Chronological project history is
 `PROGRESS.md` for the current period and **[archive/](archive/)** for
-earlier ones (`PROGRESS-<from>--<to>.md`, plus the matching
-`REBUILD-STATUS-<from>--<to>.md` `make verify` runs) — verbatim, nothing
-summarised.
+earlier ones (`PROGRESS-<from>--<to>.md`, plus
+`REBUILD-STATUS-<from>--<to>.md` from the retired image-vs-live-Pi
+comparison runs) — verbatim, nothing summarised.

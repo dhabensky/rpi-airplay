@@ -7,7 +7,6 @@
 # cost against build/'s multi-GB scratch images -- pure wasted time on
 # every build, not just the first one.
 build/
-golden-reference/
 .git/
 UxPlay/.git/
 *.img

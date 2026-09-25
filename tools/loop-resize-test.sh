@@ -12,7 +12,7 @@
 # (dietpi-fs_partition_resize.service) runs on real first boot, before
 # the resize service disables itself. Two real bugs were found this way
 # that nspawn-based testing could never have caught (see
-# image-builder/build-image.sh's -U/-i comments and REBUILD-STATUS.md):
+# image-builder/build-image.sh's -U/-i comments):
 # mke2fs/mkfs.vfat generate a fresh random filesystem UUID/volume-ID on
 # every build, while /etc/fstab keeps referencing the base image's
 # original one -- so the very first `mount -o remount,rw /` in DietPi's
@@ -101,10 +101,10 @@ assert_line "$WORK/boot/config.txt" 'dtoverlay=vc4-kms-v3d' \
 assert_line "$WORK/boot/config.txt" 'gpu_mem_1024=128' \
   "GPU memory split is 128 (not the base image's default 16)"
 assert_line "$WORK/boot/config.txt" 'temp_limit=75' \
-  "thermal throttle limit matches golden-reference (75, not default 65)"
+  "thermal throttle limit is 75 (not the base image's default 65)"
 assert_line "$WORK/boot/cmdline.txt" \
   'root=PARTUUID=7d86c605-02 rootfstype=ext4 rootwait fsck.repair=yes net.ifnames=0 logo.nologo console=ttyS0,115200 console=tty1 vc4.force_hotplug=1' \
-  "cmdline.txt matches golden-reference exactly (ttyS0, vc4.force_hotplug=1)"
+  "cmdline.txt carries this deployment's tuning (ttyS0, vc4.force_hotplug=1)"
 assert_line "$WORK/boot/dietpi.txt" 'AUTO_SETUP_NET_WIFI_ENABLED=1' \
   "WiFi auto-setup enabled (dietpi-wifi.txt alone is not sufficient)"
 assert_line "$WORK/boot/dietpi.txt" 'AUTO_SETUP_NET_HOSTNAME=rpi-airplay' \
