@@ -13,9 +13,9 @@ split by concern so each stays independently readable:
 - **[framebuffers-and-drm-planes.md](framebuffers-and-drm-planes.md)** —
   the primary vs overlay DRM plane layering.
 - **[upstream-comparison.md](upstream-comparison.md)** — diff summary
-  against pristine upstream `FDH2/UxPlay` tag `v1.73.7`
-  (submodule commit `df67c21`), file by file, with the behaviorally
-  significant changes called out.
+  of submodule commit `08abb3c` against pristine upstream `FDH2/UxPlay`
+  tag `v1.73.7` (= upstream commit `df67c21`), file by file, with the
+  behaviorally significant changes called out.
 - **[threadtest.md](threadtest.md)** — `tools/synthetic-client.cpp`'s
   `threadtest N` mode, a standalone synthetic AirPlay client (a genuinely
   separate process, not code compiled into `uxplay.cpp`) that drives the
