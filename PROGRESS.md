@@ -96,3 +96,75 @@ the WiFi address, mDNS answers on both interfaces. Real-hardware finding: with
 the Mac's WiFi up, macOS routes 169.254/16 via `en0`, so a plain
 `ssh root@169.254.100.1` times out; `ssh -o BindInterface=en9 ...` and
 `ssh root@fe80::ba27:ebff:feef:9450%en9` both work. README documents this.
+
+## 2026-09-25: the round itself got cheaper, and a day's worth of friction removed
+
+The day started on the menu/unit consolidation and turned into an audit of
+why rounds were slow. Measured across one feature's 16 agent runs: 1220
+shell commands, 294 minutes of tool time, **112 of them `sleep`**, and 156
+separate ssh invocations each paying connection setup. Most of that was
+missing recipes rather than carelessness — every agent improvised the same
+workarounds and paid for them.
+
+Delivered, in dependency order:
+
+- **`-efifo`, a machine-readable session-event channel** (submodule
+  `08abb3c`), replacing the idle menu's habit of grepping
+  `/var/log/uxplay.log` for `release_display: hid video`. The user's
+  objection was the right one: log text is a developer artifact, not a
+  contract. Emission is serialized with the state test under one mutex —
+  an earlier revision committed the state and wrote outside it, which let
+  two threads invert a `begin`/`end` pair on the wire (measured: 31
+  inversions per 80640 lines).
+- **One supervised daemon instead of seven units.** `uxplay-menu.service`
+  (`Type=notify`, `WatchdogSec=30s`) consumes those events, watches
+  `/etc/default/uxplay`, pushes overscan and runs the periodic refresh;
+  `uxplay-menu-render{,-watch}`, the timer, both `.path` units and
+  `uxplay-overscan-sync` are gone. Idle cost: 0 CPU ticks over 60 s
+  against a resident 4-process shell pipeline before.
+- **`tools/pissh`** — one multiplexed entry point: 0.53-1.14 s per plain
+  ssh against 0.02-0.03 s reused, a per-call timeout (a dead link used to
+  hang indefinitely, and a poisoned master hung *every* later call for ten
+  minutes), and a disposable per-repo `known_hosts` so a reflash is
+  recoverable with `pissh -k` instead of hand-editing `~/.ssh`.
+- **`make deploy`** with per-artifact targets, replacing `tools/deploy.sh`,
+  which duplicated the build recipe and deployed one of the six binaries
+  the device runs — the reason every agent hand-rolled `scp` all day.
+  Verified on hardware after the cable came back: skip-if-identical for
+  all six in 0.5 s, and a deliberately corrupted device copy detected,
+  replaced and its unit restarted.
+- **`make pytest`** that bootstraps its own venv, and **env-overridable
+  intervals** in the daemon: proving the periodic refresh fires went from
+  300 s to 6 s.
+- **A reproducibility check that can fail.**
+  `tools/verify-reproducible-build.sh` built into `mktemp -d`, which Docker
+  here does not share, so the build exited 0 with a 0-byte artifact and the
+  script compared two empty files and printed PASS. Every reproducibility
+  claim made through it on this machine was meaningless. Artifacts are now
+  truncated before a build and deleted when the check fails — a stale file
+  at the output path used to pass the non-empty test, and `conftest.py`
+  would then hand that placeholder to the suite as the binary under test.
+- **One source of truth for provisioned files.** `customize-root.sh`'s
+  heredoc for `/etc/default/uxplay` overwrote the checked-in copy whenever
+  `personal.env` supplied a key; measured on the pre-change code, a comment
+  added to the repo's file reached the image **zero** times. Values are now
+  substituted into the checked-in file through marked lines.
+- **`PROGRESS.md` 2161 → 98 lines and `REBUILD-STATUS.md` 1289 → 120**,
+  with earlier entries verbatim under `docs/archive/` (byte-identity
+  proven by sha256 of the concatenation), and the pipeline docs corrected
+  against the submodule with every claim naming a symbol that exists — 186
+  checked mechanically, so staleness is now greppable instead of
+  discovered mid-round.
+
+The most expensive single defect was not a bug in the product: `UxPlay/.git`
+sat in `build/uxplay_debug`'s prerequisites, so **any** git command advanced
+its mtime and sent the artifact into a multi-minute container rebuild. Every
+agent in every round paid it.
+
+Two claims were withdrawn after being checked rather than defended: that a
+non-UTF-8 display name can stop `uxplay.service` (systemd ignores the value
+and the unit starts), and that worktree checkouts were multiplying grep's
+search space (the four hits were four different real files). A guard that
+had been demanded for the event FIFO was also removed after a reviewer
+measured that it *created* the failure it was meant to prevent — reopening
+the path walked the consumer off the inode uxplay still writes to.
