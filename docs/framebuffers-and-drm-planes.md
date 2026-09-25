@@ -1,8 +1,11 @@
 # Framebuffers and DRM planes
 
 Status: reference document (see `docs/README.md` for the full set).
-Facts below are cited to `file:line` and were verified empirically (real
-`drmdump`/`/dev/fb0` dumps), not assumed.
+Checked against submodule commit `08abb3c`; the plane/pixel facts were
+verified empirically (real `drmdump`/`/dev/fb0` dumps), not assumed.
+Citations name a file plus a symbol, unit or flag, never a line number, so
+a citation that has gone stale fails a grep instead of quietly pointing at
+the wrong place.
 
 This system's SoC (Broadcom VC4, `vc4-kms-v3d` DRM/KMS driver) exposes
 dozens of DRM planes (`tools/drmdump.c` enumerates all of them: 43, 62,
@@ -25,7 +28,7 @@ turns on.
   fbcon writes two independent things onto it:
   1. Kernel/systemd boot console *text* — kept visible via `console=tty1`
      on the kernel cmdline (never stripped; see
-     `image-builder/customize-boot.sh:44-48`), needed for real boot-time
+     `image-builder/customize-boot.sh`), needed for real boot-time
      debugging (an earlier removal of
      `console=tty1` fixed the pillarbox-text bug below but made the boot
      log itself unreadable, which turned out to matter more in practice).
@@ -38,8 +41,9 @@ turns on.
   DRM master (same technique, see `/usr/local/bin/zero-fb0`'s own header
   comment):
   1. Early, by `/usr/local/bin/zero-fb0`
-     (`image-builder/files/etc/systemd/system/uxplay.service:17`,
-     `uxplay.service`'s `ExecStartPre`) — before uxplay itself starts.
+     (`uxplay.service`'s `ExecStartPre=`,
+     `image-builder/files/etc/systemd/system/uxplay.service`) — before
+     uxplay itself starts.
   2. Late, by `zero-fb0-late.service`
      (`image-builder/files/etc/systemd/system/zero-fb0-late.service`,
      `After=multi-user.target`) — a second pass once boot console output
@@ -47,10 +51,12 @@ turns on.
      still print to console after the early zero already ran.
   3. `uxplay-menu.service`
      (`image-builder/files/etc/systemd/system/uxplay-menu.service`,
-     `After=uxplay.service zero-fb0-late.service`) then paints the idle
-     menu (device name/IP/WiFi SSID/instructions) into the same buffer,
-     and repaints it whenever a session ends, the config changes, or its
-     5-minute refresh fires.
+     `After=uxplay.service zero-fb0-late.service`, started by that unit's
+     `Wants=`) then paints the idle menu (device name/IP/WiFi SSID/
+     instructions) into the same buffer, and repaints it whenever a session
+     ends, `/etc/default/uxplay` changes, or its refresh interval elapses
+     (`refresh_secs` in `tools/uxplay-menu.c`, 300s, overridable via
+     `UXPLAY_MENU_REFRESH_SECS`).
   `uxplay.service` claims DRM master via its own kmssink essentially at
   startup — independent of any client connecting — and holds it for the
   service's whole lifetime, per `/usr/local/bin/zero-fb0`'s own header
@@ -60,15 +66,17 @@ turns on.
   `console=tty1` — whatever was last written directly into `/dev/fb0`
   (the late zero, then the menu) simply stays there, visible through
   plane 98's gaps exactly like the boot text used to be.
-- The **throwaway blank-pipeline mechanism** (`video_renderer.c:1023`,
-  `videotestsrc pattern=black num-buffers=1 ! kmssink
-  force-modesetting=true`, used by the `DESTROYED` path in
-  `docs/video-pipeline.md`) also ultimately paints onto this plane
-  (`force-modesetting=true` forces a full CRTC modeset, which targets the
-  primary plane) — a real rendered black frame via a fresh, temporary
-  kmssink, not a `/dev/fb0` write. This is a *different* mechanism from
-  `zero-fb0` that happens to affect the same plane; don't confuse the two
-  when debugging.
+- Also zeroed at **runtime**, from inside uxplay itself:
+  `video_renderer_blank_primary_plane()` (`renderers/video_renderer.c`) is
+  called by `video_renderer_choose_codec()` every time a connection
+  (re)confirms `PLAYING`, so nothing stale is left to bleed through a
+  non-16:9 source's pillarbox margins. Its body
+  (`blank_primary_plane_cb()`, deferred onto the main loop with
+  `g_idle_add()`) sizes the buffer from
+  `/sys/class/graphics/fb0/virtual_size` + `bits_per_pixel` and writes
+  zeros to `/dev/fb0` — the same plain-write technique as `zero-fb0`,
+  reimplemented in C so the library never shells out to a deployment
+  script. It is *not* a DRM or kmssink call and never touches plane 98.
 
 ## Plane 98 — the video overlay plane
 
@@ -76,7 +84,18 @@ turns on.
   h265 share this in practice, since only one codec is ever active per
   session).
 - Geometry is fully dynamic, driven live by kmssink's `render-rectangle`
-  property — currently only used by the overscan feature (inset margins).
+  property. `apply_render_rectangle()` (`renderers/video_renderer.c`) is
+  the single place that sets it, for two purposes:
+  - **Overscan insets** — `video_renderer_set_overscan()`, fed by the
+    `-overscan l:r:t:b` startup flag and by `"l r t b\n"` lines arriving
+    on the `-ofifo` FIFO (`uxplay-menu` is the writer in this deployment;
+    `uxplay.cpp`'s `overscan_fifo_watch_callback()` is the reader). An
+    out-of-range set is logged and ignored in favour of the full screen.
+  - **Hiding video on disconnect** — `video_renderer_release_display()`
+    parks the full-size rectangle at `x = -screen_width`, off the left
+    edge, so plane 86's idle menu is what's left visible. A degenerate
+    `<0,0,1,1>` rect would not work: kmssink's aspect-preserving fit
+    rounds it to <= 0 and skips the DRM commit entirely.
 - Composites **on top of** the primary plane wherever it covers it
   (standard DRM overlay-plane stacking) — the primary plane is never
   actually invisible, just normally fully covered.
@@ -93,9 +112,23 @@ why pillarbox margins used to show boot text instead of black before
 `zero-fb0`/`zero-fb0-late.service` existed, and it's also the entire
 mechanism behind the idle menu screen itself — `uxplay-menu-render`
 writes into this same plane, and once `uxplay.service` holds DRM master,
-nothing else can overwrite it until the next explicit write (a repaint
-driven by `uxplay-menu.service`, or plane 98 getting a buffer again on the
-next connection).
+nothing else can overwrite it until the next explicit write.
+
+Once boot is done, two processes write that plane, alternating per session:
+
+- **Session start** — uxplay itself, entirely internally:
+  `video_renderer_choose_codec()` calls
+  `video_renderer_blank_primary_plane()`, wiping the menu to black so it
+  cannot show through plane 98's margins.
+- **Session end** — `uxplay-menu` (`tools/uxplay-menu.c`) repaints the menu
+  via `/usr/local/bin/uxplay-menu-render`. It learns the session ended over
+  uxplay's `-efifo` channel: uxplay's `event_fifo_session_end()` writes a
+  `session-end` line and `uxplay-menu` reads
+  `/run/uxplay-events.fifo`. `UxPlay/event_fifo.h` documents that
+  protocol, including the fact that a dropped write swallows a later
+  transition, so the last line can read `session-end` mid-session.
+  `uxplay-menu` also repaints when `/etc/default/uxplay` changes and on its
+  own refresh interval.
 
 **Tooling note**: `tools/drmdump.c` reads both planes' live atomic
 properties *and* dumps their actual pixel content — this is the only

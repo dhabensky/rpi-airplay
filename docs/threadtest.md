@@ -1,15 +1,46 @@
-# `tools/synthetic-client.cpp`: real multi-threaded server test tool
+# `synthetic-client`: real multi-threaded server test tool
 
-`synthetic-client threadtest N --port <raop_port>`
-(`UxPlay/tools/synthetic-client.cpp`) drives the real `raop_init()`/
-`raop_start_httpd()` server over loopback with a minimal synthetic AirPlay
-client, instead of `-replay`'s single-thread callback-injection model.
-This exercises the real httpd thread, real `conn_request()`/
-`raop_handler_setup()` dispatch, and a real per-connection
+Reference document for `UxPlay/tools/synthetic-client.cpp`, checked against
+submodule commit `08abb3c`. (The filename is `threadtest.md` for historical
+reasons — `threadtest` is one of nine modes, all listed below.)
+
+`synthetic-client <mode> --port <raop_port>` drives the real
+`raop_init()`/`raop_start_httpd()` server over loopback with a minimal
+synthetic AirPlay client, instead of `-replay`'s single-thread
+callback-injection model. This exercises the real httpd thread, real
+`conn_request()`/`raop_handler_setup()` dispatch, and a real per-connection
 `raop_rtp_thread_udp` — none of which `-replay` ever touches (`-replay`
 calls `video_process()`/`audio_process()`/`audio_renderer_start()`
 directly from one feeder thread, bypassing `lib/httpd.c` and `lib/raop.c`
-entirely).
+entirely). Per `docs/verification-protocol.md`, that is why acceptance for
+a pipeline change needs `mirrortest` plus a real run on the Pi, not
+`-replay`.
+
+## Modes
+
+`print_usage()` in `tools/synthetic-client.cpp` is the authoritative list;
+each mode is dispatched from `main()` by name to a `mode_<name>()`
+function.
+
+| Mode | Purpose | Documented in |
+|---|---|---|
+| `threadtest [N] [--gap-s S]` | N audio SETUP/audio/TEARDOWN cycles | this file, below |
+| `mirrortest [N] [...]` | N **mirror** (video) SETUP/frames/TEARDOWN cycles, sourcing real SPS/PPS + frames from a `.cap` fixture | `docs/testing.md` |
+| `ntpresync` | NTP-sync-reset-on-restart regression check | this file, below |
+| `resendstorm` | resend-request-rate regression check | this file, below |
+| `resendrecovery` | end-to-end resend recovery-time model | this file, below |
+| `peekstall` | `httpd.c` head-of-line-blocking regression check | `mode_peekstall()` |
+| `shorturl` | `httpd.c` peek-truncation / protocol-corruption check | `mode_shorturl()` |
+| `shorturlfrag [N]` | `httpd.c` peek-continuation-path corruption check | `mode_shorturlfrag()` |
+| `shorturlsweep <split> [N]` | splits `"GET / RTSP/1.0..."` at `<split>` bytes and prints the raw response | `mode_shorturlsweep()` |
+
+Only `threadtest` and `mirrortest` take a positional cycle count (the
+parser gates that on the mode name). `--frames-cap`,
+`--frames-per-cycle`, `--abort-mirror`, `--no-teardown` and `--idle-s` are
+accepted by the parser for any mode but only `mode_mirrortest()` reads
+them.
+
+## A separate process, not an in-uxplay harness
 
 `synthetic-client` is a **standalone binary**, built alongside
 `uxplay_debug` from the same CMake project (`tools/build-uxplay.sh`
@@ -20,7 +51,7 @@ exist in it for this purpose. See `tools/pytest/conftest.py`'s
 `TwoProcessRunner` for the exact two-process pattern the pytest suite
 uses to drive this.
 
-## Usage
+## `synthetic-client threadtest`: audio session lifecycle
 
 ```
 # terminal/process 1: an unmodified server, audio-only, no avahi needed
@@ -42,8 +73,9 @@ synthetic-client threadtest N --port <raop_port> [--gap-s S] [--host 127.0.0.1]
 - `N` is the number of SETUP/TEARDOWN cycles to run.
 - `--gap-s S`: inter-cycle gap. The client sends a `POST /feedback`
   keepalive at least every 2s during the gap, so gaps longer than the
-  server's missed-feedback/`-reset` timeout (default 15s) don't get the
-  connection killed.
+  server's missed-feedback/`-reset` timeout (`MISSED_FEEDBACK_LIMIT`, 15s
+  by default; `uxplay.service` passes `-reset 60`) don't get the connection
+  killed.
 - `UX_THREADTEST_DIAG=1` (env var, set on the **server** process): enables
   timing/state print lines from the server side (`TT_DIAG` macro,
   `renderers/audio_renderer.c`) — connection restart timing,
@@ -71,16 +103,17 @@ synthetic-client threadtest N --port <raop_port> [--gap-s S] [--host 127.0.0.1]
    true, reset on every restart, so without this every audio packet below
    would sit in the jitter buffer forever), then sends real
    AES-128-CBC-encrypted RTP audio packets (a genuine captured AAC-ELD
-   frame, `tt_real_aac_eld_frame`) to `dataPort`, then sends TEARDOWN.
+   frame, `kRealAacEldFrame`) to `dataPort`, then sends TEARDOWN.
 5. `controlPort` is always `0` in the SETUP **request** (the client's own
    declared port, distinct from the server's `controlPort` in the
    response used for the sync packet above): a non-zero value there
    activates `raop_buffer_dequeue()`'s resend-wait path
-   (`lib/raop_buffer.c:242-251`), which withholds every packet awaiting a
+   (`raop_buffer_dequeue()`'s `no_resend` branch, `lib/raop_buffer.c`),
+   which withholds every packet awaiting a
    genuine RTCP resend the driver never sends or answers.
 6. Prints `SEND-SETUP`/`RECV-SETUP-response`/`SENT-SYNC`/
    `FIRST-AUDIO-PACKET`/`SEND-TEARDOWN`/`RECV-TEARDOWN-response`, each with
-   a `tt_now()` timestamp and cycle number — used by
+   a `now_s()` timestamp and cycle number — used by
    `tools/pytest/test_reconnect_latency.py` (see below) to measure
    reconnect latency precisely.
 
@@ -171,8 +204,11 @@ stay under threshold — see
 synthetic-client resendrecovery --port <raop_port>
 ```
 
-Same setup as `resendstorm` (real `controlPort`, permanent 5-7 gap,
-5ms keepalive stream), but this mode actually answers resend requests --
+Same setup as `resendstorm` (real `controlPort`, permanent 5-7 gap) but a
+deliberately faster 5ms keepalive stream, not `resendstorm`'s real
+`480.0/44100.0` cadence — this mode measures whether a gap resolves at all,
+not how long the real-world stall lasts. It also actually answers resend
+requests --
 modeling a contended channel instead of a real lossy WiFi link, which a
 loopback Docker interface can't reproduce: each received resend-request
 pushes a `channel_busy_until` deadline forward, and the driver only sends

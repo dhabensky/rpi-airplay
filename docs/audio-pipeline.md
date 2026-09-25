@@ -1,28 +1,32 @@
 # Audio pipeline: threading and state machine
 
 Reference document for `renderers/audio_renderer.c`, `lib/raop_rtp.c`,
-`lib/raop.c`, `lib/raop_handlers.h`. All facts cited to `file:line`.
+`lib/raop.c`, `lib/raop_handlers.h`. Checked against submodule commit
+`08abb3c`. Citations name a file plus a symbol or flag, never a line
+number: a renamed or deleted symbol fails a `git -C UxPlay grep`, whereas a
+drifted line number silently points somewhere plausible and wrong.
 
 ## Threads that touch audio state
 
 | Thread | Role |
 |---|---|
-| **httpd thread** (`httpd.c:699`, the single `select()`-based RTSP/HTTP loop — see `docs/video-pipeline.md` for the full thread table) | Runs every request handler, including the audio SETUP handler (`raop_handlers.h:1027` on), which calls `audio_get_format()` → `audio_renderer_start_deferred()` (`uxplay.cpp`) and `raop_rtp_start_audio()`, in that order, in the same function. Also runs `conn_request()` (`raop.c:190`), the per-connection-type classifier. |
-| **RAOP audio thread** (`raop_rtp.c:705`, (re)created per `raop_rtp_start_audio()` call) | Runs `raop_rtp_thread_udp()` — reads incoming audio RTP, decrypts, calls `audio_process()` (→ `audio_renderer_render_buffer()`, `raop_rtp.c:631`) and, via `raop_rtp_process_events()`, `audio_set_volume`/`audio_flush` (`raop_rtp.c:314-322`). Exits when `raop_rtp->running` goes false (`raop_rtp.c:270-273`). |
-| **RAOP NTP thread** (`raop_ntp.c:437`) | Clock sync only. |
-| **Main thread** | Runs the `GMainLoop`; executes every `g_idle_add()`-deferred callback, including `audio_renderer_start_deferred()`/`audio_renderer_self_heal_deferred()`. |
+| **httpd thread** (created in `httpd.c`'s `httpd_start()`; the single `select()`-based RTSP/HTTP loop is `httpd_thread()` — see `docs/video-pipeline.md` for the full thread table) | Runs every request handler, including the audio SETUP handler (`raop_handler_setup()`, `raop_handlers.h`), which calls the `audio_get_format` callback (`uxplay.cpp`'s `audio_get_format()` → `audio_renderer_start_deferred()`) and then `raop_rtp_start_audio()`, in that order, in the same function. Also runs `conn_request()` (`raop.c`), the per-connection-type classifier. |
+| **RAOP audio thread** (`raop_rtp.c`'s `THREAD_CREATE(... raop_rtp_thread_udp ...)` inside `raop_rtp_start_audio()`, (re)created per call) | Runs `raop_rtp_thread_udp()` — reads incoming audio RTP, decrypts, calls the `audio_process` callback (→ `audio_renderer_render_buffer()`) and, via `raop_rtp_process_events()`, `audio_set_volume`/`audio_flush`. Exits when `raop_rtp->running` goes false. |
+| **RAOP NTP thread** (`raop_ntp.c`'s `raop_ntp_thread()`) | Clock sync only. |
+| **Main thread** | Runs the `GMainLoop`; executes every `g_idle_add()`-deferred callback, including `audio_renderer_deferred_start_cb()` (the body of `audio_renderer_start_deferred()`). |
 
 ## Two separate "audio" state machines
 
 1. **The RTP-receiving layer** (`lib/raop_rtp.c`): a UDP socket pair +
    `raop_rtp_thread_udp()` thread, tracked by `raop_rtp->running`/`joined`,
    protected by `raop_rtp->run_mutex` within this file (every touch of
-   `running`/`joined` is inside a matching `MUTEX_LOCK`/`MUTEX_UNLOCK` pair,
-   `raop_rtp.c:269-309,644-857`). A SETUP request creates or reuses this
+   `running`/`joined` is inside a matching `MUTEX_LOCK`/`MUTEX_UNLOCK`
+   pair). A SETUP request creates or reuses this
    object (`raop_rtp_start_audio()`); the same `raop_rtp_t` persists across
    every TEARDOWN+SETUP cycle on a connection — it is destroyed only when
-   the connection itself is destroyed (`conn_destroy()`, `raop.c:576-586`)
-   or on a genuine key-exchange "first SETUP" (`raop_handlers.h:920-926`).
+   the connection itself is destroyed (`conn_destroy()`, `raop.c`)
+   or on a genuine key-exchange "first SETUP" (`raop_handler_setup()`,
+   `raop_handlers.h`).
    This layer only knows about encrypted RTP packets on the wire — nothing
    about GStreamer.
 2. **The GStreamer rendering layer** (`renderers/audio_renderer.c`): the
@@ -31,8 +35,8 @@ Reference document for `renderers/audio_renderer.c`, `lib/raop_rtp.c`,
    and plays sound. No locking in this file — pipeline-mutating calls are
    instead serialized onto the main thread (see below).
 
-A SETUP request's handler (httpd thread, `raop_handlers.h:1027` on)
-touches both, in sequence, in the same function: `audio_get_format()` →
+`raop_handler_setup()` (httpd thread, `raop_handlers.h`) touches both, in
+sequence, in the same function: the `audio_get_format` callback →
 `audio_renderer_start_deferred()` (layer 2, deferred) first, then
 `raop_rtp_start_audio()` (layer 1, synchronous).
 
@@ -41,14 +45,14 @@ touches both, in sequence, in the same function: `audio_get_format()` →
 `raop_rtp_t` holds three fields that map a packet's raw RTP timestamp to
 an absolute NTP time: `rtp_sync`, `client_ntp_sync`, `initial_sync`
 (`raop_rtp.c`, struct fields). `rtp_time_to_client_ntp()`
-(`raop_rtp.c:359-377`) computes `ntp_time_remote` for each packet from
+(`raop_rtp.c`) computes `ntp_time_remote` for each packet from
 these; it returns `0` (meaning "not synced yet") whenever
-`!initial_sync`. A periodic RTCP sync packet (type `0x54`,
-`raop_rtp.c:499-520`) updates `rtp_sync`/`client_ntp_sync` and sets
+`!initial_sync`. A periodic RTCP sync packet (`type_c == 0x54` in
+`raop_rtp_thread_udp()`) updates `rtp_sync`/`client_ntp_sync` and sets
 `initial_sync = true`.
 
 Because the same `raop_rtp_t` persists across restarts on a connection,
-`raop_rtp_start_audio()` (`raop_rtp.c:662`) resets all three fields back
+`raop_rtp_start_audio()` (`raop_rtp.c`) resets all three fields back
 to their unsynced state (`rtp_sync = 0; client_ntp_sync = 0; initial_sync
 = false;`) at the top of every (re)start, right after the redundant-SETUP
 guard. This guarantees each fresh RTP-timestamp range (every SETUP
@@ -56,7 +60,8 @@ restarts the client's RTP timestamp counter) is never combined with a
 sync reference point computed for a *different* timestamp range — the
 result would otherwise be an arbitrary, wildly wrong absolute NTP time
 until the next sync packet arrives. The redundant-SETUP guard immediately
-above this reset (`raop_rtp.c:670-687`) already guarantees the previous
+above this reset (the `raop_rtp->running || !raop_rtp->joined` check under
+`run_mutex`) already guarantees the previous
 audio thread has fully exited and been joined before it runs, so no lock
 is needed around the reset itself.
 
@@ -64,14 +69,14 @@ is needed around the reset itself.
 
 `lib/raop_buffer.c` holds a strict in-order jitter buffer
 (`RAOP_BUFFER_LENGTH` = 256 entries): `raop_buffer_dequeue()`
-(`raop_buffer.c:284`) refuses to return anything past the first missing
+refuses to return anything past the first missing
 sequence number, correct for AAC-ELD's decode ordering requirement.
 `raop_buffer_handle_resends()` (`raop_buffer.c`) is called on every
 iteration of the RAOP audio thread's `select()` loop that real socket
 activity wakes (its timeout branch does a bare `continue`, skipping this
-call entirely — `raop_rtp.c:421-441`) and asks the client to resend
+call entirely — see `raop_rtp_thread_udp()`) and asks the client to resend
 whatever's still missing at the front of the buffer, via
-`raop_rtp_resend_callback()` (`raop_rtp.c:199`).
+`raop_rtp_resend_callback()` (`raop_rtp.c`).
 
 Two fixes here, from the same 2026-09-14 investigation, addressing two
 different things — worth keeping them straight, since deploying only the
@@ -106,11 +111,12 @@ actual reported symptom:
    landed exactly on `first_seqnum + 256` at the moment each gap
    resolved). Fix: track (`raop_buffer->stalled`/`stall_since_ns`) how
    long the current `first_seqnum` slot has been stuck, and force-skip
-   once `RAOP_STALL_TIMEOUT_NS` elapses, *regardless* of buffer capacity
-   — orthogonal to, not a replacement for, the capacity-based path.
-   `RAOP_BUFFER_LENGTH` itself stays at 256: it was raised there by
-   upstream specifically to fix ALAC stuttering (`0263d55`, issue #526,
-   after an earlier 32→960→32 back-and-forth, `b64ce6f`), so shrinking it
+   once `RAOP_STALL_TIMEOUT_NS` (200ms) elapses, *regardless* of buffer
+   capacity — orthogonal to, not a replacement for, the capacity-based path.
+   `RAOP_BUFFER_LENGTH` itself stays at 256: upstream raised it there for
+   initial ALAC stuttering (`0263d55`, whose own message hedges — "To fix
+   (?) #526" — after an earlier 32→960→32 back-and-forth, `b64ce6f`),
+   so shrinking it
    back would risk reintroducing that regression; the time-based fix
    leaves normal jitter/reordering (which resolves in single-digit-to-tens
    of ms, well under 200ms) completely unaffected. `raop_buffer->stalled`
@@ -149,7 +155,7 @@ check this before assuming a new regression.
 
 ## GStreamer pipeline construction (per format)
 
-`audio_renderer_init()` (`audio_renderer.c:131`, called once at startup,
+`audio_renderer_init()` (`audio_renderer.c`, called once at startup,
 main thread) builds one static `gst_parse_launch()` pipeline per audio
 format (`NFORMATS = 2` in practice — AAC-ELD and ALAC) and keeps all of
 them alive for the process lifetime in `renderer_type[]`:
@@ -165,9 +171,9 @@ appsrc name=audio_source
   ! <audiosink>  (alsasink in production, sync=true/false depending on -av/-as)
 ```
 
-`renderer` (module-static, `audio_renderer.c:56`) points at whichever of
+`renderer` (module-static, `audio_renderer.c`) points at whichever of
 `renderer_type[]`'s pre-built pipelines is currently active.
-`audio_renderer_start()` (`audio_renderer.c:306`) has two branches when a
+`audio_renderer_start()` (`audio_renderer.c`) has two branches when a
 renderer already exists:
 - **Codec change** (`*ct != renderer->ct`): sends
   `gst_app_src_end_of_stream()`, drops the old pipeline to
@@ -184,7 +190,7 @@ renderer already exists:
   stale clock reference needs updating for the new session.
 
 Both `audio_renderer_start()` and the self-heal path below are only ever
-invoked via `audio_renderer_start_deferred()`/`audio_renderer_self_heal_deferred()`
+invoked via `audio_renderer_start_deferred()`
 (`g_idle_add()` onto the main thread) from their real call sites — never
 called directly from the httpd thread or the RAOP audio thread. Every
 *other* existing caller of the synchronous `audio_renderer_start()`/
@@ -195,29 +201,32 @@ before freeing the structures `renderer` points into).
 ## Self-heal path
 
 `audio_renderer_render_buffer()` (RAOP audio thread, called once per
-incoming audio packet) has a self-heal-on-failure path
-(`audio_renderer.c:377-397`): if `gst_app_src_push_buffer()` returns
-anything other than `GST_FLOW_OK`, it calls
-`audio_renderer_self_heal_deferred()`, which runs
+incoming audio packet) has a self-heal-on-failure path: if
+`gst_app_src_push_buffer()` returns anything other than `GST_FLOW_OK`, it
+calls `audio_renderer_start_deferred(renderer->ct, true)`. The
+`force_restart` argument is packed into the high byte of the `gpointer` and
+makes `audio_renderer_deferred_start_cb()` run
 `audio_renderer_stop()`+`audio_renderer_start()` as one atomic pair on the
 main thread (not two separate idle callbacks, which another thread could
-interleave between).
+interleave between). The unconditional stop matters:
+`audio_renderer_start()`'s own same-`ct` branch only refreshes the base
+time and would not rebuild a broken appsrc.
 
 ## `conn_request()`'s connection-type classification
 
-`conn_request()` (`raop.c:190`), the httpd thread's per-request
+`conn_request()` (`raop.c`), the httpd thread's per-request
 connection-type classifier: an AirPlay client can open a legacy
 `CSeq`-based `RAOP` connection and/or a newer `X-Apple-Session-ID`-based
 `AIRPLAY` connection. The first request on a not-yet-classified connection
-runs this block (`raop.c:270-339`):
+runs the classification block:
 
 - A second same-type (`RAOP`) connection is rejected with 409 Conflict
-  unless `-nohold` is set (`raop.c:270-287`).
+  unless `-nohold` is set.
 - When an `AIRPLAY`-type connection is classified
-  (`else if (client_session_id)`, `raop.c:292`) and an existing
+  (`else if (client_session_id)`) and an existing
   `RAOP`-type connection exists
-  (`httpd_get_connection_by_type(..., CONNECTION_TYPE_RAOP, 1)`,
-  `raop.c:308`), `raop_should_teardown_existing_connection()`
+  (`httpd_get_connection_by_type(..., CONNECTION_TYPE_RAOP, 1)`),
+  `raop_should_teardown_existing_connection()`
   (`lib/raop_conn_policy.c`) compares the two connections' remote
   addresses: a byte-for-byte match leaves the existing connection's
   mirror/audio/NTP services alone; any mismatch (including differing
@@ -228,9 +237,9 @@ runs this block (`raop.c:270-339`):
 
 | State | Type | Written from | Read from | Protection |
 |---|---|---|---|---|
-| `renderer` (`audio_renderer.c:56`) | raw pointer | Main thread only (via the two deferred entry points above) | RAOP audio thread (`audio_renderer_render_buffer()`, `audio_renderer_set_volume()`, `audio_renderer_flush()`) | Single-writer (main thread only) by construction; no lock needed. |
-| `gst_audio_pipeline_base_time` (`audio_renderer.c:34`) | `GstClockTime` | Main thread only | RAOP audio thread (`audio_renderer_render_buffer()`'s PTS-rebase logic) | Single-writer by construction. |
-| `render_audio`, `sync` (`audio_renderer.c:42,45`) | plain `gboolean` | Main thread only, inside `get_renderer_type()` (called from `audio_renderer_start()`) | RAOP audio thread (`audio_renderer_render_buffer()`'s first line gates on `render_audio`) | Single-writer by construction. |
+| `renderer` (`audio_renderer.c`) | raw pointer | Main thread only (via `audio_renderer_deferred_start_cb()`) | RAOP audio thread (`audio_renderer_render_buffer()`, `audio_renderer_set_volume()`, `audio_renderer_flush()`) | Single-writer (main thread only) by construction; no lock needed. |
+| `gst_audio_pipeline_base_time` (`audio_renderer.c`) | `GstClockTime` | Main thread (`audio_renderer_start()`) **and** the RAOP audio thread (`audio_renderer_render_buffer()`'s re-base branch, when a seek/reconnect makes `ntp_time < base_time`) | RAOP audio thread (`audio_renderer_render_buffer()`'s PTS-rebase logic) | **None.** Not single-writer, despite the name: an unsynchronized 64-bit store from two threads. A torn/lost write costs one session's PTS offset, not memory safety. |
+| `render_audio`, `sync` (`audio_renderer.c`) | plain `gboolean` | Main thread only, inside `get_renderer_type()` (called from `audio_renderer_start()`) | RAOP audio thread (`audio_renderer_render_buffer()`'s first line gates on `render_audio`) | Single-writer by construction. |
 | `raop_rtp->running`/`joined` (`raop_rtp.c`) | `int` bitflags | httpd thread (`raop_rtp_start_audio()`) and the RAOP audio thread's own exit path | Both | `run_mutex`, consistently applied within `raop_rtp.c`. |
 | `raop_rtp->rtp_sync`/`client_ntp_sync`/`initial_sync` (`raop_rtp.c`) | mixed | httpd thread, at the top of `raop_rtp_start_audio()` (reset); RAOP audio thread (updated by sync packets, read by every packet) | RAOP audio thread | No lock; safe because the redundant-SETUP guard guarantees the previous audio thread has exited before the httpd thread's reset runs, and only the RAOP audio thread touches these fields afterward until the next restart. |
 
