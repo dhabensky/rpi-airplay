@@ -1,0 +1,17 @@
+[Unit]
+Description=Repaint the idle menu screen on session end, config change and periodically
+After=uxplay.service zero-fb0-late.service
+
+# Deliberately no [Install]: WantedBy=multi-user.target while ordered after
+# zero-fb0-late.service (itself After=multi-user.target) is an ordering cycle,
+# so zero-fb0-late.service's own Wants= is what starts this.
+[Service]
+# Root, no User=: ss -tnp hides process names from an unprivileged caller,
+# which would silently turn uxplay-menu-render's "is a session live?" guard
+# into "always paint" and let the menu land on top of a live mirror.
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/local/bin/uxplay-menu
+WatchdogSec=30s
+Restart=always
+RestartSec=3

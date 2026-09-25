@@ -23,19 +23,20 @@
 #
 # Usage: image-builder/customize-root.sh <root-dir> <vendor-gstreamer-dir> \
 #          <uxplay-debug-binary> <menu-render-binary> <log-ts-binary> \
-#          <drmdump-binary> <synthetic-client-binary> <files-dir> \
-#          [personal-env-file]
+#          <drmdump-binary> <synthetic-client-binary> <uxplay-menu-binary> \
+#          <files-dir> [personal-env-file]
 set -euo pipefail
 
-work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <menu-render-binary> <log-ts-binary> <drmdump-binary> <synthetic-client-binary> <files-dir> [personal-env-file]}"
+work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <menu-render-binary> <log-ts-binary> <drmdump-binary> <synthetic-client-binary> <uxplay-menu-binary> <files-dir> [personal-env-file]}"
 vendor="${2:?}"
 uxplay_bin="${3:?}"
 menu_render_bin="${4:?}"
 log_ts_bin="${5:?}"
 drmdump_bin="${6:?}"
 synthetic_client_bin="${7:?}"
-provfiles="${8:?}"
-personal_env="${9:-}"
+uxplay_menu_bin="${8:?}"
+provfiles="${9:?}"
+personal_env="${10:-}"
 
 # The Makefile mounts a persistent named volume directly at
 # $work/var/cache/apt/archives (via an extra `-v` flag on the `docker run`
@@ -291,6 +292,9 @@ install -m 0755 "$menu_render_bin" "$work/usr/local/bin/menu-render"
 echo "==> Installing log-ts binary (uxplay.service's ExecStart wrapper/timestamper)"
 install -m 0755 "$log_ts_bin" "$work/usr/local/bin/log-ts"
 
+echo "==> Installing uxplay-menu binary (uxplay-menu.service's ExecStart)"
+install -m 0755 "$uxplay_menu_bin" "$work/usr/local/bin/uxplay-menu"
+
 echo "==> Installing the drmdump and synthetic-client diagnostic tools"
 # On-demand tools, no unit and no runtime cost: drmdump dumps live DRM
 # plane/CRTC state, synthetic-client drives a real RTSP/RTP session against
@@ -298,13 +302,11 @@ echo "==> Installing the drmdump and synthetic-client diagnostic tools"
 install -m 0755 "$drmdump_bin" "$work/usr/local/bin/drmdump"
 install -m 0755 "$synthetic_client_bin" "$work/usr/local/bin/synthetic-client"
 
-echo "==> Installing image-builder/files/ content (systemd units, udev rule, modules-load, uxrun, zero-fb0, uxplay-menu-render, uxplay-menu-render-watch, eth0-backup-ip)"
+echo "==> Installing image-builder/files/ content (systemd units, tmpfiles.d, udev rule, modules-load, uxrun, zero-fb0, uxplay-menu-render, eth0-backup-ip)"
 cp -a "$provfiles/etc/." "$work/etc/"
 install -m 0755 "$provfiles/usr/local/bin/uxrun" "$work/usr/local/bin/uxrun"
 install -m 0755 "$provfiles/usr/local/bin/zero-fb0" "$work/usr/local/bin/zero-fb0"
-install -m 0755 "$provfiles/usr/local/bin/uxplay-overscan-sync" "$work/usr/local/bin/uxplay-overscan-sync"
 install -m 0755 "$provfiles/usr/local/bin/uxplay-menu-render" "$work/usr/local/bin/uxplay-menu-render"
-install -m 0755 "$provfiles/usr/local/bin/uxplay-menu-render-watch" "$work/usr/local/bin/uxplay-menu-render-watch"
 install -m 0755 "$provfiles/usr/local/bin/eth0-backup-ip" "$work/usr/local/bin/eth0-backup-ip"
 
 if [ -n "$personal_env" ] && [ -f "$personal_env" ]; then
@@ -317,10 +319,12 @@ if [ -n "$personal_env" ] && [ -f "$personal_env" ]; then
     default_display_name="$(. "$provfiles/etc/default/uxplay"; echo "$UXPLAY_DISPLAY_NAME")"
     cat > "$work/etc/default/uxplay" <<EOF
 # Pixels to inset the rendered picture on each edge, compensating for this
-# TV's own overscan/zoom cropping the outer edges of the HDMI signal.
-# Applied live -- edit and save, no restart or reconnect needed
-# (uxplay-overscan.path watches this file). Baked in at image-build time
-# from personal.env.
+# TV's own overscan/zoom cropping the outer edges of the HDMI signal. A
+# value that is not an integer leaves that edge at 0, a negative one makes
+# uxplay ignore all four and use the full screen; nothing here can stop
+# uxplay.service from starting. Applied live -- edit and save, no restart or
+# reconnect needed (uxplay-menu watches this file). Baked in at image-build
+# time from personal.env.
 UXPLAY_OVERSCAN_LEFT=${OVERSCAN_LEFT:-0}
 UXPLAY_OVERSCAN_RIGHT=${OVERSCAN_RIGHT:-0}
 UXPLAY_OVERSCAN_TOP=${OVERSCAN_TOP:-0}
@@ -350,29 +354,18 @@ chroot "$work" useradd -r -M -s /usr/sbin/nologin -G audio,video,render,input ux
 # resolve it.
 chroot "$work" install -d -o uxplay -g uxplay -m 0755 /home/uxplay
 
-echo "==> Enabling uxplay.service, uxplay-overscan.path, zero-fb0-late.service,"
-echo "    the uxplay-menu-render timer/path, and uxplay-menu-render-watch"
-echo "    (direct symlinks -- each of these units' only [Install] key is"
-echo "    WantedBy=multi-user.target, no systemctl/live daemon needed)."
-echo "    uxplay-menu-render.service itself has no [Install] section --"
-echo "    enabling it directly here would recreate a real ordering cycle"
-echo "    with zero-fb0-late.service (confirmed on real hardware: systemd"
+echo "==> Enabling uxplay.service and zero-fb0-late.service (direct symlinks --"
+echo "    both units' only [Install] key is WantedBy=multi-user.target, no"
+echo "    systemctl/live daemon needed). uxplay-menu.service deliberately has"
+echo "    no [Install] section -- enabling it here would create a real ordering"
+echo "    cycle with zero-fb0-late.service (confirmed on real hardware: systemd"
 echo "    silently deletes one of the two jobs to break it, so zero-fb0-late"
-echo "    never ran). It's pulled in instead by zero-fb0-late.service's own"
-echo "    Wants=, and by the timer/path below."
+echo "    never ran). It's pulled in by zero-fb0-late.service's own Wants=."
 mkdir -p "$work/etc/systemd/system/multi-user.target.wants"
 ln -sf /etc/systemd/system/uxplay.service \
   "$work/etc/systemd/system/multi-user.target.wants/uxplay.service"
-ln -sf /etc/systemd/system/uxplay-overscan.path \
-  "$work/etc/systemd/system/multi-user.target.wants/uxplay-overscan.path"
 ln -sf /etc/systemd/system/zero-fb0-late.service \
   "$work/etc/systemd/system/multi-user.target.wants/zero-fb0-late.service"
-ln -sf /etc/systemd/system/uxplay-menu-render.timer \
-  "$work/etc/systemd/system/multi-user.target.wants/uxplay-menu-render.timer"
-ln -sf /etc/systemd/system/uxplay-menu-render.path \
-  "$work/etc/systemd/system/multi-user.target.wants/uxplay-menu-render.path"
-ln -sf /etc/systemd/system/uxplay-menu-render-watch.service \
-  "$work/etc/systemd/system/multi-user.target.wants/uxplay-menu-render-watch.service"
 
 echo "==> Enabling dietpi-skip-firstrun.service (without this, every"
 echo "    interactive SSH login on a real boot synchronously runs the real"

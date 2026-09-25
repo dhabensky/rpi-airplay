@@ -1,8 +1,8 @@
 [Unit]
 Description=Zero /dev/fb0 once boot console output has genuinely stopped
 After=multi-user.target
-Wants=uxplay-menu-render.service
-Before=uxplay-menu-render.service
+Wants=uxplay-menu.service
+Before=uxplay-menu.service
 
 [Service]
 Type=oneshot

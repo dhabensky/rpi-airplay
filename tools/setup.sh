@@ -123,19 +123,25 @@ if [ ! -f /etc/default/uxplay ]; then
 fi
 systemctl enable uxplay.service
 
-echo "==> Installing the overscan live-update watcher (pushes /etc/default/"
-echo "    uxplay's values through uxplay's -ofifo whenever the file changes)"
-install -m 0755 ../image-builder/files/usr/local/bin/uxplay-overscan-sync /usr/local/bin/uxplay-overscan-sync
-install -m 0644 ../image-builder/files/etc/systemd/system/uxplay-overscan.path /etc/systemd/system/uxplay-overscan.path
-install -m 0644 ../image-builder/files/etc/systemd/system/uxplay-overscan.service /etc/systemd/system/uxplay-overscan.service
+echo "==> Installing the fbcon-blanking ExecStartPre helper"
+install -m 0755 ../image-builder/files/usr/local/bin/zero-fb0 /usr/local/bin/zero-fb0
+
+echo "==> Installing the idle-menu supervisor (repaints on session end, on a"
+echo "    /etc/default/uxplay edit and every 5 minutes, and pushes edited"
+echo "    overscan values through uxplay's -ofifo) plus uxplay's event FIFO"
+install -m 0644 ../image-builder/files/etc/tmpfiles.d/uxplay.conf /etc/tmpfiles.d/uxplay.conf
+systemd-tmpfiles --create /etc/tmpfiles.d/uxplay.conf
+install -m 0755 ../image-builder/files/usr/local/bin/uxplay-menu-render /usr/local/bin/uxplay-menu-render
+install -m 0644 ../image-builder/files/etc/systemd/system/uxplay-menu.service /etc/systemd/system/uxplay-menu.service
+install -m 0644 ../image-builder/files/etc/systemd/system/zero-fb0-late.service /etc/systemd/system/zero-fb0-late.service
 systemctl daemon-reload
-systemctl enable --now uxplay-overscan.path
+# --now so the daemon exists before the next reboot; zero-fb0 also clears the
+# HDMI console now. Until step 2 installs /usr/local/bin/uxplay-menu the unit
+# restarts every 3s forever (systemd's 5-per-10s default can't trip at 3s).
+systemctl enable --now zero-fb0-late.service
 
 echo "==> Installing the uxrun A/V-sync tuning helper"
 install -m 0755 ../image-builder/files/usr/local/bin/uxrun /usr/local/bin/uxrun
-
-echo "==> Installing the fbcon-blanking ExecStartPre helper"
-install -m 0755 ../image-builder/files/usr/local/bin/zero-fb0 /usr/local/bin/zero-fb0
 
 cat <<'EOF'
 
@@ -144,7 +150,10 @@ cat <<'EOF'
     2. Copy it to /usr/local/bin/uxplay_debug on this Pi, plus `make log-ts`'s
        build/bin/log-ts to /usr/local/bin/log-ts -- the ExecStart in
        ../image-builder/files/etc/systemd/system/uxplay.service runs uxplay_debug
-       under it to timestamp /var/log/uxplay.log, and won't start without it.
+       under it to timestamp /var/log/uxplay.log, and won't start without it --
+       and `make uxplay-menu`'s build/bin/uxplay-menu to /usr/local/bin/uxplay-menu
+       (uxplay-menu.service's ExecStart), plus `make menu-render`'s
+       build/bin/menu-render to /usr/local/bin/menu-render.
     3. If this is the first time bcm2835-codec was loaded, reboot once.
     4. systemctl start uxplay.service
 EOF

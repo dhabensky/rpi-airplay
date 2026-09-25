@@ -5,7 +5,7 @@
 # recipes under tools/ and image-builder/ -- this file is the dependency
 # graph and the one documented entry point, not where the actual logic
 # lives.
-.PHONY: image image-xz uxplay menu-render log-ts drmdump synthetic-client \
+.PHONY: image image-xz uxplay menu-render uxplay-menu log-ts drmdump synthetic-client \
         vendor-gstreamer base-image golden-reference verify \
         reproducible-check refresh-base-image refresh-apt-lists refresh-buildenv-apt-lists \
         test-boot test-eth-backup test-resize clean
@@ -47,6 +47,7 @@ APT_CACHE_VOLUME := rpi-airplay-apt-cache
 image: build/rpi-airplay.img
 uxplay: build/uxplay_debug
 menu-render: build/bin/menu-render
+uxplay-menu: build/bin/uxplay-menu
 log-ts: build/bin/log-ts
 drmdump: build/bin/drmdump
 synthetic-client: build/synthetic-client
@@ -58,7 +59,7 @@ base-image: build/dietpi-base.img
 # inside the container, so a non-zero exit (an assert() firing) fails this
 # recipe.
 .PHONY: unit-tests
-unit-tests: Dockerfile $(shell find apt-lists -type f 2>/dev/null) $(shell find UxPlay/tests UxPlay/lib/raop_conn_policy.* UxPlay/renderers/audio_renderer.c -type f 2>/dev/null)
+unit-tests: Dockerfile $(shell find apt-lists -type f 2>/dev/null) $(shell find UxPlay/tests UxPlay/lib/raop_conn_policy.* UxPlay/renderers/audio_renderer.c tools/tests tools/uxplay-menu-parse.c tools/uxplay-menu-parse.h -type f 2>/dev/null)
 	./tools/run-unit-tests.sh
 
 # --- uxplay binary (native arm64 via colima/Docker) ---
@@ -75,6 +76,10 @@ build/synthetic-client: build/uxplay_debug
 # --- menu-render binary (native arm64 via colima/Docker) ---
 build/bin/menu-render: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/menu-render.c tools/build-menu-render.sh
 	./tools/build-menu-render.sh build/bin
+
+# --- uxplay-menu binary (native arm64 via colima/Docker) ---
+build/bin/uxplay-menu: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/uxplay-menu.c tools/uxplay-menu-parse.c tools/uxplay-menu-parse.h tools/build-uxplay-menu.sh
+	./tools/build-uxplay-menu.sh build/bin
 
 # --- log-ts binary (native arm64 via colima/Docker) ---
 build/bin/log-ts: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/log-ts.c tools/build-log-ts.sh
@@ -108,7 +113,7 @@ build/dietpi-base.img: image-builder/BASE-IMAGE.env image-builder/fetch-base.sh
 # rebuild iteration for a file that's never actually downloaded/distributed
 # in that form. See `image-xz` below if a compressed copy is ever actually
 # needed (e.g. to archive/share a specific build).
-build/rpi-airplay.img: build/uxplay_debug build/bin/menu-render build/bin/log-ts \
+build/rpi-airplay.img: build/uxplay_debug build/bin/menu-render build/bin/uxplay-menu build/bin/log-ts \
                           build/bin/drmdump build/synthetic-client \
                           build/vendor-gstreamer/MANIFEST.md build/dietpi-base.img \
                           $(shell find image-builder/files -type f) \
@@ -132,6 +137,7 @@ build/rpi-airplay.img: build/uxplay_debug build/bin/menu-render build/bin/log-ts
 	  -v "$$PWD/build/vendor-gstreamer":/vendor:ro \
 	  -v "$$PWD/build/uxplay_debug":/uxplay_debug:ro \
 	  -v "$$PWD/build/bin/menu-render":/menu-render:ro \
+	  -v "$$PWD/build/bin/uxplay-menu":/uxplay-menu:ro \
 	  -v "$$PWD/build/bin/log-ts":/log-ts:ro \
 	  -v "$$PWD/build/bin/drmdump":/drmdump:ro \
 	  -v "$$PWD/build/synthetic-client":/synthetic-client:ro \
@@ -139,7 +145,7 @@ build/rpi-airplay.img: build/uxplay_debug build/bin/menu-render build/bin/log-ts
 	  -v "$$PWD/image-builder":/image-builder:ro \
 	  -v $(APT_CACHE_VOLUME):/rootdir/var/cache/apt/archives \
 	  $(if $(PERSONAL_ENV),-v "$$PWD/personal.env":/personal.env:ro,) \
-	  $(BUILDENV_TAG) bash /image-builder/customize-root.sh /rootdir /vendor /uxplay_debug /menu-render /log-ts /drmdump /synthetic-client /provfiles $(if $(PERSONAL_ENV),/personal.env,)
+	  $(BUILDENV_TAG) bash /image-builder/customize-root.sh /rootdir /vendor /uxplay_debug /menu-render /log-ts /drmdump /synthetic-client /uxplay-menu /provfiles $(if $(PERSONAL_ENV),/personal.env,)
 	docker run --rm \
 	  -v $(DIETPI_BOOT_VOLUME):/dietpi-boot \
 	  -v "$$PWD/image-builder":/image-builder:ro \

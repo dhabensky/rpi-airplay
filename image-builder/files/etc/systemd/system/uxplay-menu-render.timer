@@ -1,9 +1,0 @@
-[Unit]
-Description=Periodically refresh the idle menu screen
-
-[Timer]
-OnBootSec=1min
-OnUnitActiveSec=5min
-
-[Install]
-WantedBy=multi-user.target

@@ -2,6 +2,10 @@
 Description=UxPlay AirPlay mirroring receiver
 After=network-online.target sound.target time-sync.target
 Wants=network-online.target time-sync.target
+# Second, cycle-free starter for the menu daemon (the other is
+# zero-fb0-late.service's Wants=): a masked one must not silently mean no
+# idle menu at all. Pull-in only, no ordering, so no cycle.
+Wants=uxplay-menu.service
 
 [Service]
 StandardOutput=append:/var/log/uxplay.log
@@ -18,7 +22,7 @@ ExecStartPre=/usr/local/bin/zero-fb0
 # log-ts is the main process: it timestamps uxplay_debug's merged output into
 # /var/log/uxplay.log and then exits exactly as its child did, so a dead
 # timestamper fails the unit instead of leaving it alive but mute.
-ExecStart=/usr/local/bin/log-ts -- /usr/bin/stdbuf -oL -eL /usr/local/bin/uxplay_debug -vd v4l2h264dec -vc identity -srgb no -n "${UXPLAY_DISPLAY_NAME}" -reset 60 -vs "kmssink qos=false ts-offset=300000000" -as "alsasink device=plughw:vc4hdmi,0" -ofifo /run/uxplay/overscan.fifo
+ExecStart=/usr/local/bin/log-ts -- /usr/bin/stdbuf -oL -eL /usr/local/bin/uxplay_debug -vd v4l2h264dec -vc identity -srgb no -n "${UXPLAY_DISPLAY_NAME}" -reset 60 -vs "kmssink qos=false ts-offset=300000000" -as "alsasink device=plughw:vc4hdmi,0" -ofifo /run/uxplay/overscan.fifo -efifo /run/uxplay-events.fifo
 Restart=on-failure
 RestartSec=3
 

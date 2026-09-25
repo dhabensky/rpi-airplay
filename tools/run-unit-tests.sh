@@ -1,10 +1,10 @@
 #!/bin/bash
-# Compiles and runs UxPlay/tests/*.c against the shared Dockerfile tooling
-# image. A non-zero exit here (an assert() firing, or a segfault) IS the
-# fail signal -- `make unit-tests` succeeding at all means every test
-# passed. UxPlay/ is bind-mounted read-only and copied to a container-local
-# path first, same reasoning as tools/build-uxplay.sh (keep the host's
-# submodule checkout untouched).
+# Compiles and runs UxPlay/tests/*.c and tools/tests/*.c against the shared
+# Dockerfile tooling image. A non-zero exit here (an assert() firing, or a
+# segfault) IS the fail signal -- `make unit-tests` succeeding at all means
+# every test passed. UxPlay/ is bind-mounted read-only and copied to a
+# container-local path first, same reasoning as tools/build-uxplay.sh (keep
+# the host's submodule checkout untouched).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -12,6 +12,7 @@ docker build -q -t rpi-airplay-buildenv -f Dockerfile .
 
 docker run --rm \
   -v "$PWD/UxPlay":/mnt/UxPlay-src:ro \
+  -v "$PWD/tools":/mnt/tools:ro \
   rpi-airplay-buildenv \
   bash -c '
     set -euo pipefail
@@ -61,4 +62,12 @@ docker run --rm \
       test_release_display_epoch_guard.c \
       $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0)
     /tmp/test_release_display_epoch_guard
+
+    # The wrapper repo'"'"'s own tools/, not the UxPlay fork: uxplay-menu'"'"'s
+    # event-FIFO drain and /etc/default/uxplay parsing.
+    cd /mnt/tools/tests
+    gcc -O0 -g -Wall -Wextra -Werror \
+      -o /tmp/test_uxplay_menu_parse \
+      test_uxplay_menu_parse.c ../uxplay-menu-parse.c
+    /tmp/test_uxplay_menu_parse
   '

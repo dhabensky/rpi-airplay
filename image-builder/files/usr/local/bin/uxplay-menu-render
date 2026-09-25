@@ -1,10 +1,9 @@
 #!/bin/bash
 # Looks up device name/IP/WiFi SSID and renders the idle menu screen via
 # menu-render. menu-render itself knows nothing about where this text
-# comes from -- that lookup lives here, not in the C tool. Run once after
-# uxplay.service starts, again on every /etc/default/uxplay edit
-# (uxplay-menu-render.path), and periodically (uxplay-menu-render.timer)
-# to keep IP/SSID fresh.
+# comes from -- that lookup lives here, not in the C tool. Invoked by the
+# uxplay-menu daemon for every repaint; this script decides whether
+# painting is safe right now, the daemon decides when to try.
 set -eu
 
 # Skip while a client holds an active session -- repainting would overwrite
