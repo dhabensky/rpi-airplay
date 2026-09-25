@@ -18,6 +18,9 @@ cd "$(dirname "$0")/.."
 outdir="${1:-build/bin}"
 mkdir -p "$outdir"
 outdir_abs="$(cd "$outdir" && pwd)"
+# Cleared first: on an output dir the VM doesn't share, a leftover binary would
+# otherwise survive the run and pass the artifact checks below unnoticed.
+rm -f "$outdir_abs/drmdump" "$outdir_abs/drmpaint"
 
 docker build -q -t rpi-airplay-buildenv -f Dockerfile .
 
