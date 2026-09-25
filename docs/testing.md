@@ -15,10 +15,11 @@ the script):
 |---|---|
 | `test_raop_conn_policy.c` | `raop_should_teardown_existing_connection()` (`lib/raop_conn_policy.c`) in complete isolation — no GStreamer, no mocking. |
 | `test_bus_callback_null_renderer.c` | `gstreamer_audio_pipeline_bus_callback()` survives a `GST_MESSAGE_ERROR` when the file-static `renderer` is `NULL` — links `renderers/audio_renderer.c` directly. |
+| `test_event_fifo_nonblocking.c` | `-efifo`'s writes (`UxPlay/event_fifo.c`) never block or kill the process: opening with no reader, flooding a FIFO nobody reads, emitting after the reader left, refusing a regular file at the path, and strict begin/end alternation of delivered lines under two contending emitter threads. Installs no SIGALRM/SIGPIPE handler, so either failure is a fatal signal. |
 
-Scope: pure-function/single-callback correctness. Cannot exercise
-threading, timing, or anything that needs a running GStreamer pipeline or
-real network I/O.
+Scope: pure-function/single-callback correctness, plus contention on one
+self-contained module (`event_fifo.c`). Cannot exercise the real session
+threads, timing, a running GStreamer pipeline or real network I/O.
 
 ## `tools/synthetic-client.cpp` — standalone test-client, real-server tests
 

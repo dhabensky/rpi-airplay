@@ -31,6 +31,11 @@ docker run --rm \
       test_netlink_addr_watch.c ../lib/netlink_addr_watch.c
     /tmp/test_netlink_addr_watch
 
+    gcc -O0 -g -Wall -Wextra -Werror -pthread \
+      -o /tmp/test_event_fifo_nonblocking \
+      test_event_fifo_nonblocking.c ../event_fifo.c ../lib/logger.c
+    /tmp/test_event_fifo_nonblocking
+
     # Pulls in llhttp verbatim (vendored, not -Wextra-clean) alongside the
     # function under test -- -Wall -Werror only, matching the gstreamer tests
     # below for the same reason.
