@@ -39,18 +39,13 @@ apt-get install -y avahi-daemon ffmpeg gdb libavahi-compat-libdnssd1 libplist-2.
 # existing dropbear-only SSH session, purging dropbear first would cut off
 # remote access before openssh is there to take over.
 apt-get install -y openssh-server openssh-client openssh-sftp-server
-# Debian's OpenSSH ships with PermitRootLogin=prohibit-password by default
-# (root can only log in via key, never password) -- this project has only
-# ever used root/password auth. Without this override, installing
-# openssh-server locks the device out entirely the moment dropbear is
-# purged below (learned the hard way: no console fallback either, since
-# getty@tty1 is masked -- had to fix this by writing this exact file
-# directly into the SD card's ext4 image offline via `debugfs -w`).
+# Root password login, without which installing openssh-server locks the
+# device out the moment dropbear is purged below (getty@tty1 is masked, so
+# there is no console fallback either) -- see the installed file's own
+# header for the rest.
 install -d /etc/ssh/sshd_config.d
-cat > /etc/ssh/sshd_config.d/root-password-login.conf <<'EOF'
-PermitRootLogin yes
-PasswordAuthentication yes
-EOF
+install -m 0644 ../image-builder/files/etc/ssh/sshd_config.d/root-password-login.conf \
+  /etc/ssh/sshd_config.d/root-password-login.conf
 systemctl reload ssh 2>/dev/null || true
 apt-get purge -y dropbear dropbear-bin 2>/dev/null || true
 apt-get autoremove -y

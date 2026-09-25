@@ -221,42 +221,6 @@ else
 fi
 rm -rf "$work/var/lib/apt/lists/"*
 
-echo "==> Allowing root password login over SSH"
-# Debian's OpenSSH ships with PermitRootLogin=prohibit-password by default
-# (root can only log in via key, never password) -- this project has only
-# ever used root/password auth (no keys), and this device's console login
-# (getty@tty1) is deliberately masked below, with no other way in if this
-# is missed. Learned this the hard way: installing openssh-server without
-# this override locked out the live Pi entirely (no console, no working
-# SSH) until fixed by writing this exact file directly into the SD card's
-# ext4 image offline via `debugfs -w`.
-install -d "$work/etc/ssh/sshd_config.d"
-cat > "$work/etc/ssh/sshd_config.d/root-password-login.conf" <<'EOF'
-PermitRootLogin yes
-PasswordAuthentication yes
-EOF
-
-echo "==> Fixing sshd host-key generation to survive DietPi's first-boot resize+reboot"
-# sshd-keygen.service (generates the host keys sshd needs to bind at all)
-# ships with ConditionFirstBoot=yes -- a strict systemd one-shot condition
-# tied to /etc/machine-id being empty at that exact kernel boot. DietPi's
-# own first-boot flow does a filesystem resize + automatic reboot before
-# most services (including this one) ever get a chance to run; by the
-# *second* kernel boot systemd has already written a real machine-id
-# (persisted across the reboot), so ConditionFirstBoot=yes evaluates false
-# forever -- host keys never get generated, sshd can never bind, and every
-# connection gets refused permanently. Confirmed empirically: a freshly
-# flashed, otherwise-working image never brought up sshd at all. Override
-# the trigger to be based on whether the keys actually exist instead of a
-# one-shot boot counter, so it fires correctly no matter which kernel boot
-# ssh.service first actually starts on.
-install -d "$work/etc/systemd/system/sshd-keygen.service.d"
-cat > "$work/etc/systemd/system/sshd-keygen.service.d/override.conf" <<'EOF'
-[Unit]
-ConditionFirstBoot=
-ConditionPathExists=!/etc/ssh/ssh_host_rsa_key
-EOF
-
 echo "==> Marking DietPi's first-run setup as already complete"
 # /boot/dietpi/.install_stage (part of the root ext4 partition, NOT the
 # FAT32 firmware boot partition despite the "/boot" path) tracks DietPi's
@@ -302,7 +266,9 @@ echo "==> Installing the drmdump and synthetic-client diagnostic tools"
 install -m 0755 "$drmdump_bin" "$work/usr/local/bin/drmdump"
 install -m 0755 "$synthetic_client_bin" "$work/usr/local/bin/synthetic-client"
 
-echo "==> Installing image-builder/files/ content (systemd units, tmpfiles.d, udev rule, modules-load, uxrun, zero-fb0, uxplay-menu-render, eth0-backup-ip)"
+echo "==> Installing image-builder/files/ content (systemd units + sshd-keygen"
+echo "    drop-in, sshd_config.d, tmpfiles.d, udev rule, modules-load, uxrun,"
+echo "    zero-fb0, uxplay-menu-render, eth0-backup-ip)"
 cp -a "$provfiles/etc/." "$work/etc/"
 install -m 0755 "$provfiles/usr/local/bin/uxrun" "$work/usr/local/bin/uxrun"
 install -m 0755 "$provfiles/usr/local/bin/zero-fb0" "$work/usr/local/bin/zero-fb0"
