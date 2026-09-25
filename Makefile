@@ -63,7 +63,11 @@ unit-tests: Dockerfile $(shell find apt-lists -type f 2>/dev/null) $(shell find 
 	./tools/run-unit-tests.sh
 
 # --- uxplay binary (native arm64 via colima/Docker) ---
-build/uxplay_debug: Dockerfile $(shell find apt-lists -type f 2>/dev/null) $(shell find UxPlay -maxdepth 1)
+# UxPlay/.git's mtime moves on any ordinary git command (measured: a plain
+# `git status` advanced it), which made every build stale; the submodule's
+# checked-out ref is tracked through .git/HEAD instead.
+UXPLAY_PREREQS := $(filter-out UxPlay/.git,$(shell find UxPlay -maxdepth 1)) $(wildcard UxPlay/.git/HEAD)
+build/uxplay_debug: Dockerfile $(shell find apt-lists -type f 2>/dev/null) $(UXPLAY_PREREQS)
 	./tools/build-uxplay.sh build/uxplay_debug
 
 # --- synthetic-client binary: the same build-uxplay.sh run that produces
