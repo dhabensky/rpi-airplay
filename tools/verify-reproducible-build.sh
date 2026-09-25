@@ -10,17 +10,21 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+# In-repo, not mktemp -d: the Docker VM shares this repo but not the host's
+# temp dirs, so builds there never reach the host side at all. Kept after the
+# run, so the diffoscope hint below has something to point at.
+out="build/verify-repro"
+rm -rf "$out"
+mkdir -p "$out"
 
 echo "==> Build 1"
-./tools/build-uxplay.sh "$tmp/uxplay-1"
+./tools/build-uxplay.sh "$out/uxplay-1"
 
 echo "==> Build 2 (independent run)"
-./tools/build-uxplay.sh "$tmp/uxplay-2"
+./tools/build-uxplay.sh "$out/uxplay-2"
 
-sha1=$(sha256sum "$tmp/uxplay-1" | cut -d' ' -f1)
-sha2=$(sha256sum "$tmp/uxplay-2" | cut -d' ' -f1)
+sha1=$(sha256sum "$out/uxplay-1" | cut -d' ' -f1)
+sha2=$(sha256sum "$out/uxplay-2" | cut -d' ' -f1)
 
 echo "build 1: $sha1"
 echo "build 2: $sha2"
@@ -30,6 +34,6 @@ if [ "$sha1" = "$sha2" ]; then
   exit 0
 else
   echo "FAIL: builds differ -- not reproducible. Investigate with diffoscope:"
-  echo "  diffoscope $tmp/uxplay-1 $tmp/uxplay-2"
+  echo "  diffoscope $out/uxplay-1 $out/uxplay-2"
   exit 1
 fi

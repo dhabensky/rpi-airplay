@@ -143,8 +143,12 @@ now a real `--uxplay-ref` run instead of a one-time manual step.
 
 Requires: Docker only.
 
-- **`tools/verify-reproducible-build.sh`** — builds `uxplay` twice
-  (one `--no-cache`) and asserts the extracted binaries are byte-identical.
+- **`tools/verify-reproducible-build.sh`** (`make reproducible-check`) —
+  builds `uxplay` twice through `tools/build-uxplay.sh` and asserts the two
+  binaries are byte-identical. No `--no-cache` variant: the compile runs in
+  a `docker run`, so there is no build-layer cache for it to hide behind.
+  Both binaries stay in `build/verify-repro/` for the `diffoscope` hint the
+  failure path prints.
 - **`tools/vendor-gstreamer-closure.sh`** — computes/vendors the minimal
   GStreamer plugin closure; a build-time tool, not a pass/fail test.
 - **`tools/compare-rebuild.sh`** — tiered comparison of a built image
