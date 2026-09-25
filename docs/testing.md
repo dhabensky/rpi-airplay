@@ -7,15 +7,19 @@ What each test type actually checks, what it needs to run, and — critically
 
 Requires: Docker only. No hardware, no network, no Pi.
 
-`tools/run-unit-tests.sh` compiles and runs each `UxPlay/tests/*.c` file
-inside the shared tooling image (a non-zero exit/assert failure fails
-the script):
+`tools/run-unit-tests.sh` compiles and runs each `UxPlay/tests/*.c` file and
+each `tools/tests/*.c` file (the wrapper repo's own tooling) inside the shared
+tooling image (a non-zero exit/assert failure fails the script):
 
 | Test | Checks |
 |---|---|
-| `test_raop_conn_policy.c` | `raop_should_teardown_existing_connection()` (`lib/raop_conn_policy.c`) in complete isolation — no GStreamer, no mocking. |
-| `test_bus_callback_null_renderer.c` | `gstreamer_audio_pipeline_bus_callback()` survives a `GST_MESSAGE_ERROR` when the file-static `renderer` is `NULL` — links `renderers/audio_renderer.c` directly. |
-| `test_event_fifo_nonblocking.c` | `-efifo`'s writes (`UxPlay/event_fifo.c`) never block or kill the process: opening with no reader, flooding a FIFO nobody reads, emitting after the reader left, refusing a regular file at the path, and strict begin/end alternation of delivered lines under two contending emitter threads. Installs no SIGALRM/SIGPIPE handler, so either failure is a fatal signal. |
+| `UxPlay/tests/test_raop_conn_policy.c` | `raop_should_teardown_existing_connection()` (`lib/raop_conn_policy.c`) in complete isolation — no GStreamer, no mocking. |
+| `UxPlay/tests/test_netlink_addr_watch.c` | `netlink_addr_watch_is_addr_change()` (`lib/netlink_addr_watch.c`) against hand-built netlink messages. |
+| `UxPlay/tests/test_on_url_protocol_bounds.c` | `on_url()`'s post-URL protocol read stays inside the bytes fed to `http_request_add_data()` — sweeps request-line split points against a poison-filled buffer. |
+| `UxPlay/tests/test_bus_callback_null_renderer.c` | `gstreamer_audio_pipeline_bus_callback()` survives a `GST_MESSAGE_ERROR` when the file-static `renderer` is `NULL` — links `renderers/audio_renderer.c` directly. |
+| `UxPlay/tests/test_release_display_epoch_guard.c` | `video_renderer_release_display()`'s deferred hide no-ops when a reconnect bumped the epoch first — links `renderers/video_renderer.c` and uses the real `g_idle_add()` dispatch. |
+| `UxPlay/tests/test_event_fifo_nonblocking.c` | `-efifo`'s writes (`UxPlay/event_fifo.c`) never block or kill the process: opening with no reader, flooding a FIFO nobody reads, emitting after the reader left, refusing a regular file at the path, and strict begin/end alternation of delivered lines under two contending emitter threads. Installs no SIGALRM/SIGPIPE handler, so either failure is a fatal signal. |
+| `tools/tests/test_uxplay_menu_parse.c` | `uxplay-menu`'s two inputs (`tools/uxplay-menu-parse.c`): the event-FIFO drain against a real FIFO (split, unknown, over-long lines, a backlog bigger than the pipe) and `/etc/default/uxplay` parsing against real files. |
 
 Scope: pure-function/single-callback correctness, plus contention on one
 self-contained module (`event_fifo.c`). Cannot exercise the real session

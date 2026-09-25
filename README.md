@@ -121,6 +121,35 @@ services there too). The address is link-scope, so the idle menu keeps
 showing the WiFi IP. Checked offline by `make test-eth-backup`
 (`tools/nspawn-test-eth-backup.sh`).
 
+## Services on the device
+
+Two units own the AirPlay receiver and its screen:
+
+- **`uxplay.service`** — `uxplay_debug` itself, under `log-ts`. Reads
+  `/etc/default/uxplay` for the display name only, exposes an overscan
+  channel (`-ofifo /run/uxplay/overscan.fifo`) and a session-event channel
+  (`-efifo /run/uxplay-events.fifo`, one `session-begin`/`session-end` line
+  per transition).
+- **`uxplay-menu.service`** — `/usr/local/bin/uxplay-menu`
+  (`tools/uxplay-menu.c`), a resident, watchdog-supervised daemon. It
+  repaints the idle menu (via `/usr/local/bin/uxplay-menu-render`) when a
+  session ends, when `/etc/default/uxplay` changes, and every 5 minutes. It
+  is also the only thing that sets uxplay's overscan margins, pushed into
+  `-ofifo` at startup, on every edit, and again once uxplay recreates that
+  FIFO after a restart. Started by `zero-fb0-late.service`'s `Wants=` (so
+  the first paint lands after the boot console has been cleared) and by
+  `uxplay.service`'s. It runs as root because the "is a session live?"
+  guard needs `ss -tnp` to see process names.
+
+Editing `/etc/default/uxplay` on the device takes the overscan margins and
+the menu text live — no restart and no reconnect. `UXPLAY_DISPLAY_NAME` is
+the exception: it reaches uxplay as the start-time `-n` argument, so the name
+AirPlay advertises stays as it was until `uxplay.service` restarts.
+
+An overscan value that is not an integer leaves that edge at 0, and a
+negative one makes uxplay ignore the whole update and use the full screen; no
+value in this file can keep `uxplay.service` from starting.
+
 ## On-device diagnostics (shipped in the image, nothing to deploy)
 
 - **`/var/log/uxplay.log` lines are timestamped** — UTC ISO-8601 with

@@ -45,10 +45,12 @@ turns on.
      `After=multi-user.target`) — a second pass once boot console output
      has genuinely stopped, closing the race window where systemd could
      still print to console after the early zero already ran.
-  3. `uxplay-menu-render.service`
-     (`image-builder/files/etc/systemd/system/uxplay-menu-render.service`,
+  3. `uxplay-menu.service`
+     (`image-builder/files/etc/systemd/system/uxplay-menu.service`,
      `After=uxplay.service zero-fb0-late.service`) then paints the idle
-     menu (device name/IP/WiFi SSID/instructions) into the same buffer.
+     menu (device name/IP/WiFi SSID/instructions) into the same buffer,
+     and repaints it whenever a session ends, the config changes, or its
+     5-minute refresh fires.
   `uxplay.service` claims DRM master via its own kmssink essentially at
   startup — independent of any client connecting — and holds it for the
   service's whole lifetime, per `/usr/local/bin/zero-fb0`'s own header
@@ -91,8 +93,9 @@ why pillarbox margins used to show boot text instead of black before
 `zero-fb0`/`zero-fb0-late.service` existed, and it's also the entire
 mechanism behind the idle menu screen itself — `uxplay-menu-render`
 writes into this same plane, and once `uxplay.service` holds DRM master,
-nothing else can overwrite it until the next explicit write (the timer/
-path units, or plane 98 getting a buffer again on the next connection).
+nothing else can overwrite it until the next explicit write (a repaint
+driven by `uxplay-menu.service`, or plane 98 getting a buffer again on the
+next connection).
 
 **Tooling note**: `tools/drmdump.c` reads both planes' live atomic
 properties *and* dumps their actual pixel content — this is the only
