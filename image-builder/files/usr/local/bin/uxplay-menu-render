@@ -14,10 +14,18 @@ if ss -tnp 2>/dev/null | awk '$1 == "ESTAB"' | grep -q 'uxplay_debug'; then
 fi
 
 CONF=/etc/default/uxplay
-UXPLAY_DISPLAY_NAME="Living Room TV"
+default_name="Living Room TV"
+UXPLAY_DISPLAY_NAME="$default_name"
 if [ -f "$CONF" ]; then
   # shellcheck disable=SC1090
   . "$CONF"
+fi
+
+# Pango rejects invalid UTF-8 and lays out nothing, so the whole menu would go
+# missing over one bad byte in the name. Render the rest and say why.
+if ! printf '%s' "$UXPLAY_DISPLAY_NAME" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1; then
+  echo "uxplay-menu-render: UXPLAY_DISPLAY_NAME is not valid UTF-8, using \"$default_name\"" >&2
+  UXPLAY_DISPLAY_NAME="$default_name"
 fi
 
 # Global scope only: eth0's link-scope 169.254.100.1 backup address is never shown.

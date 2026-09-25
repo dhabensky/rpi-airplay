@@ -156,9 +156,20 @@ the menu text live — no restart and no reconnect. `UXPLAY_DISPLAY_NAME` is
 the exception: it reaches uxplay as the start-time `-n` argument, so the name
 AirPlay advertises stays as it was until `uxplay.service` restarts.
 
-An overscan value that is not an integer leaves that edge at 0, and a
-negative one makes uxplay ignore the whole update and use the full screen; no
-value in this file can keep `uxplay.service` from starting.
+An overscan value that is not an integer leaves that edge at 0, and any
+out-of-range set — a negative margin, or margins leaving width or height at or
+below zero — makes uxplay ignore all four and use the full screen
+(`video_renderer_set_overscan()`). No overscan value can keep
+`uxplay.service` from starting, and neither does a non-UTF-8
+`UXPLAY_DISPLAY_NAME`: systemd's `EnvironmentFile` parsing drops such a value
+with a warning, so uxplay starts with an empty name rather than refusing the
+`-n` argument.
+
+The other reader of that name, `uxplay-menu-render`, sources the file directly
+and so does see the raw bytes. Pango lays out nothing at all for invalid UTF-8,
+which cost the entire menu screen (`/dev/fb0` measured byte-identical to blank,
+with the renderer still exiting 0), so the script now validates the name, logs
+the bad value and renders with its own default instead.
 
 ## On-device diagnostics (shipped in the image, nothing to deploy)
 
