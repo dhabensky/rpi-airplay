@@ -67,12 +67,16 @@ surviving seeks — does.
 - `tools/` (besides `capx.c`) — reproducibility tooling
   (`vendor-gstreamer-closure.sh` regenerates `vendor/`,
   `verify-reproducible-build.sh` is a double-build hash check,
-  `compare-rebuild.sh` is the `make verify` recipe) plus two scripts for
+  `compare-rebuild.sh` is the `make verify` recipe) plus three scripts for
   the live-Pi-over-SSH path, independent of `image-builder/`'s
-  from-scratch image assembly: `setup.sh` provisions an already-running
-  Pi in place (idempotent, safe to re-run), and `deploy.sh` builds and
-  pushes just the `uxplay_debug` binary to a Pi that's already set up —
-  the fast path for iterating without a reflash.
+  from-scratch image assembly: `pissh` is the multiplexed SSH entry point
+  everything else uses (run a command, `-s` a script on stdin, `-p`/`-g`
+  to copy a file; every call is bounded by `UXPLAY_SSH_TIMEOUT` seconds so
+  a dead link fails instead of hanging, and `-k` forgets the device's host
+  key after a reflash), `setup.sh` provisions an already-running Pi in place
+  (idempotent, safe to re-run), and `deploy.sh` builds and pushes just the
+  `uxplay_debug` binary to a Pi that's already set up — the fast path for
+  iterating without a reflash.
 - `REBUILD-STATUS.md` — one dated entry per `make verify` run, with every
   Tier A/B/C delta either fixed or explicitly justified. Read the latest
   entry before assuming a build matches the live Pi.

@@ -85,7 +85,9 @@ as much as rigour.
   not verification, it is padding.
 - **Batch device work into one script** and run it detached; the wired link
   flaps, and 156 single-command round-trips paid connection setup 156
-  times. Use the shared SSH helper so multiplexing is reused.
+  times. Reach the device through `tools/pissh` (run a command, `-s` a script
+  on stdin, `-p`/`-g` to copy a file) so the multiplexed master is reused and
+  the address stays in one place.
 - **Do not run `make image` to inspect a unit file or a script** — read the
   extracted rootfs. Build the image once, at the end, when the artifact
   itself is the claim.

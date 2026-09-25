@@ -1,0 +1,159 @@
+#!/bin/bash
+# The one way anything in this repo reaches the Pi: ssh/scp with the options
+# this device needs, multiplexed over a shared master connection. Only the
+# first call in ten minutes pays connection setup (measured on the wired link:
+# 0.53-1.14s per plain ssh, 0.02-0.03s per reused one), so a round of device
+# work stops paying it per command.
+#
+# Usage:
+#   tools/pissh <cmd> [args...]        run a command on the Pi
+#   tools/pissh -s [script]            run a bash script read from stdin (or
+#                                      from the named file) on the Pi
+#   tools/pissh -p <local> <remote>    copy a file to the Pi
+#   tools/pissh -g <remote> <local>    copy a file from the Pi
+#   tools/pissh -t                     print the target host and exit
+#   tools/pissh -k                     forget the device's host key (after a
+#                                      reflash) and drop the shared master
+#
+# The remote shell re-splits the command, as with plain ssh, so anything whose
+# words must stay together belongs in a single quoted argument or in a -s
+# script.
+#
+# The default target is the device documented in docs/verification-protocol.md.
+# UXPLAY_PI_HOST overrides the host (the variable tools/pytest/conftest.py
+# takes too), UXPLAY_SSH_PASSWORD the password, UXPLAY_SSH_TIMEOUT the
+# per-call bound in seconds.
+set -euo pipefail
+
+PI_HOST="${UXPLAY_PI_HOST:-root@rpi-airplay.local}"
+PI_PASSWORD="${UXPLAY_SSH_PASSWORD:-dietpi}"
+SSH_TIMEOUT="${UXPLAY_SSH_TIMEOUT:-120}"
+
+# Under $TMPDIR, which is per-user on macOS, and named for the target so a
+# changed UXPLAY_PI_HOST gets its own master instead of reusing a stale one.
+# Spelled out rather than %r@%h:%p so a timed-out call can remove it.
+CONTROL_PATH="${TMPDIR:-/tmp}"
+CONTROL_PATH="${CONTROL_PATH%/}/pissh-$(id -u)-$PI_HOST"
+
+KNOWN_HOSTS="$(cd "$(dirname "$0")/.." && pwd)/build/pissh-known-hosts"
+mkdir -p "$(dirname "$KNOWN_HOSTS")"
+
+SSH_OPTS=(
+  -o "ControlMaster=auto"
+  -o "ControlPath=$CONTROL_PATH"
+  -o "ControlPersist=10m"
+  -o "ConnectTimeout=10"
+  # ConnectTimeout only covers the initial TCP connect; these make a link that
+  # stops answering mid-session fail in ~15s instead of hanging.
+  -o "ServerAliveInterval=5"
+  -o "ServerAliveCountMax=3"
+  # This device's keys are kept out of ~/.ssh/known_hosts: a reflash changes
+  # the key, and a remembered mismatch refuses password auth to every tool
+  # here until it is purged. `pissh -k` purges it; ~/.ssh is never touched.
+  -o "UserKnownHostsFile=$KNOWN_HOSTS"
+  -o "StrictHostKeyChecking=accept-new"
+  -o "PreferredAuthentications=password"
+  -o "PubkeyAuthentication=no"
+  -o "NumberOfPasswordPrompts=1"
+)
+
+usage() {
+  cat >&2 <<EOF
+usage: pissh <cmd> [args...]     run a command on $PI_HOST (words re-split
+                                 remotely; quote, or use -s, to keep them)
+       pissh -s [script]         run a bash script from stdin (or a file)
+       pissh -p <local> <remote> copy a file to the Pi
+       pissh -g <remote> <local> copy a file from the Pi
+       pissh -t                  print the target host
+       pissh -k                  forget the device's host key (after a reflash)
+EOF
+  exit 2
+}
+
+# Hard per-call bound, since a wedged link (or a master poisoned by one) is
+# indistinguishable from slow work. macOS has no timeout(1), so perl holds the
+# timer and kills what it started.
+bounded() {
+  local rc=0
+  perl -e '
+    my ($limit, $host) = (shift, shift);
+    my $pid = fork();
+    die "fork: $!" unless defined $pid;
+    unless ($pid) { exec { $ARGV[0] } @ARGV; exit 127 }
+    $SIG{ALRM} = sub {
+        # Whole subtree: sshpass puts its ssh in a session of its own, and an
+        # ssh left holding the caller stdout would outlive the bound.
+        my @tree = ($pid);
+        for (my $i = 0; $i < @tree; $i++) {
+            push @tree, split " ", `pgrep -P $tree[$i] 2>/dev/null`;
+        }
+        kill 15, @tree;
+        select(undef, undef, undef, 0.5);
+        kill 9, @tree;
+        warn "pissh: no answer from $host within ${limit}s; dropping the shared master\n";
+        exit 124;
+    };
+    alarm $limit;
+    waitpid $pid, 0;
+    exit($? & 127 ? 128 + ($? & 127) : $? >> 8);
+  ' "$SSH_TIMEOUT" "$PI_HOST" "$@" || rc=$?
+  # A timed-out session is only really over once the master that holds its
+  # passed fds is gone, and a master that just wedged is not worth reusing.
+  # A remote command exiting 124 by itself costs one reconnect.
+  if [ "$rc" -eq 124 ]; then
+    perl -e 'alarm shift; exec { $ARGV[0] } @ARGV' 5 \
+      ssh "${SSH_OPTS[@]}" -O exit "$PI_HOST" >/dev/null 2>&1 || true
+    rm -f "$CONTROL_PATH"
+  fi
+  exit "$rc"
+}
+
+# -- so a remote command starting with '-' stays a command: ssh keeps parsing
+# options after the hostname.
+run_ssh() {
+  bounded sshpass -p "$PI_PASSWORD" ssh "${SSH_OPTS[@]}" -o "RequestTTY=no" "$PI_HOST" -- "$@"
+}
+
+run_scp() {
+  bounded sshpass -p "$PI_PASSWORD" scp "${SSH_OPTS[@]}" -- "$@"
+}
+
+[ $# -gt 0 ] || usage
+
+case "$1" in
+  -s)
+    shift
+    [ $# -le 1 ] || usage
+    if [ $# -eq 1 ]; then
+      run_ssh bash -s < "$1"
+    else
+      run_ssh bash -s
+    fi
+    ;;
+  -p)
+    shift
+    [ $# -eq 2 ] || usage
+    run_scp "$1" "$PI_HOST:$2"
+    ;;
+  -g)
+    shift
+    [ $# -eq 2 ] || usage
+    run_scp "$PI_HOST:$1" "$2"
+    ;;
+  -t)
+    [ $# -eq 1 ] || usage
+    printf '%s\n' "$PI_HOST"
+    ;;
+  -k)
+    [ $# -eq 1 ] || usage
+    rm -f "$KNOWN_HOSTS" "$CONTROL_PATH"
+    printf 'pissh: forgot %s; the next call accepts whatever key answers\n' \
+      "$KNOWN_HOSTS" >&2
+    ;;
+  -h|--help)
+    usage
+    ;;
+  *)
+    run_ssh "$@"
+    ;;
+esac

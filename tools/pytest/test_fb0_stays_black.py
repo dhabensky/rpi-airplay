@@ -54,7 +54,7 @@ def test_fb0_stays_black_through_real_boot(pi_target, trace_dir):
 
     assert "differ" not in fb0_diff, (
         f"/dev/fb0 has non-zero content well after boot ({fb0_diff}) -- shows through the TV's pillarbox "
-        f"margins during mirroring. Pull a copy: sshpass -p dietpi scp ... {pi_target.host}:/dev/fb0 "
+        f"margins during mirroring. Pull a copy: tools/pissh -g /dev/fb0 "
         f"build/fb0-fail.raw && ffmpeg -f rawvideo -pixel_format rgb565le -video_size 1920x1080 "
         f"-i build/fb0-fail.raw -frames:v 1 build/fb0-fail.png"
     )
