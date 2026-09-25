@@ -65,3 +65,12 @@ extends it.
    level.** A missing `TEARDOWN` line sustained a wrong hypothesis for
    days; that line only exists at `LOGGER_DEBUG`, and the service runs
    without `-d`.
+6. **A protective mechanism is only as good as the counterpart it was
+   tested against.** When asking for a guard against a cross-process
+   failure — a dead reader, a replaced file, a wedged supervisor — demand
+   evidence from the real processes, not a stub. A stub takes whatever
+   semantics make the test pass. A FIFO-revalidation guard demanded here
+   passed its container control and, against the real writer that holds
+   its fd for the process lifetime, turned a working consumer into a
+   silently deaf one — a guard that made the failure it targeted
+   reachable for the first time.

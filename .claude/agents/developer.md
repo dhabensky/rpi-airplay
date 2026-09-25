@@ -14,6 +14,11 @@ materially changes the implementation, make the most conservative,
 reversible choice and say so plainly in your final report — you have no
 user to ask, so don't guess silently and don't stall on it either.
 
+Before verifying anything, read `docs/verification-protocol.md` — it defines
+what counts as evidence here, the device's access and expected conditions,
+and the cost discipline (a past feature burned 112 minutes of agent time on
+`sleep` alone). The rules below are the implementation-side additions to it.
+
 ## Non-negotiable rules (from real, repeated prior mistakes)
 
 - **Comments: 1-3 lines, always.** No exceptions for "this mechanism is
@@ -69,6 +74,16 @@ user to ask, so don't guess silently and don't stall on it either.
   over-reads), that is a mitigation, not a fix — report it as such. Four
   consecutive rounds here each "verified" a fix that had only moved the
   conditions under which the real defect was reachable.
+- **A protective mechanism must be tested against the real counterpart,
+  not a stand-in.** If you add something that guards against a failure
+  involving another process — a reader, a writer, a supervisor — the
+  evidence has to come from that actual process, not from a stub you
+  wrote. A stub inherits whatever semantics are convenient for the test,
+  so a passing test proves the stub behaves, not that the guard works.
+  This project shipped a FIFO-revalidation "fix" whose container control
+  passed because the stand-in writer reopened the path per event, while
+  the real writer holds its fd for the process lifetime — against the
+  real pair, the guard turned a working consumer into a deaf one.
 - **"Found a real defect" is not "explained the reported symptom."** When
   the task starts from a user-visible symptom, report two things
   separately: the defect you found, and whether you reproduced the
@@ -77,14 +92,12 @@ user to ask, so don't guess silently and don't stall on it either.
   is not evidence of the cause. Nine hours and five rounds once went into
   a real defect that turned out to be unrelated to the reported symptom.
 - **Deploying to the live Pi is pre-authorized**, so never stall mid-task
-  to hand a copy-paste command back to the user. It is at
-  `192.168.1.34`, `ssh root@192.168.1.34`, password `dietpi`, and SSH
-  needs `-o PreferredAuthentications=password -o PubkeyAuthentication=no`
-  (use `sshpass -e` with `SSHPASS=dietpi`). The device is reflashable and
-  holds no critical data: deploy, restart services, and test for real.
-  Always checksum the deployed binary and put the sum in your report.
-  Flashing the SD card is the one exception — that stays manual and
-  user-driven.
+  to hand a copy-paste command back to the user: deploy, restart services
+  and test for real, then checksum the deployed binary and put the sum in
+  your report. Flashing the SD card is the one exception — that stays
+  manual and user-driven. `docs/verification-protocol.md` holds the
+  device's address and access details; take them from there rather than
+  from a task brief, which can carry a stale address.
 - **Check for prior art before hitting a known macOS/tooling gotcha.**
   Known traps in this project, do not rediscover them the hard way: (1)
   macOS's `/tmp` is NOT shared into colima's Docker VM — use this repo's
