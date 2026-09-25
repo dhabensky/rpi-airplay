@@ -196,18 +196,24 @@ image-xz: build/rpi-airplay.img
 # the file target above, so staleness is decided in one place, and restarts
 # only the unit that actually runs that binary.
 #
-# `make deploy` pushes everything the image ships; the per-artifact targets
-# are for a single binary (deploy-uxplay-menu is the common one). A push whose
-# sha256 already matches the device is skipped, restart included.
-# DRY_RUN=1 prints each plan and touches no network.
-.PHONY: deploy deploy-uxplay deploy-uxplay-menu deploy-menu-render deploy-log-ts \
-        deploy-drmdump deploy-synthetic-client
+# `make deploy` pushes the clock and then everything the image ships; the
+# per-artifact targets are for a single binary (deploy-uxplay-menu is the
+# common one). A push whose sha256 already matches the device is skipped,
+# restart included. DRY_RUN=1 prints each plan and touches no network.
+.PHONY: deploy set-clock deploy-uxplay deploy-uxplay-menu deploy-menu-render \
+        deploy-log-ts deploy-drmdump deploy-synthetic-client
 export DRY_RUN
 
-# The two that restart a unit come last, so the units come back up against a
-# fully updated set of binaries.
-deploy: deploy-menu-render deploy-drmdump deploy-synthetic-client \
+# The clock push comes first, so the restarted units stamp their journal
+# records with the real time; the two that restart a unit come last, so they
+# come back up against a fully updated set of binaries.
+deploy: set-clock deploy-menu-render deploy-drmdump deploy-synthetic-client \
         deploy-uxplay-menu deploy-log-ts deploy-uxplay
+
+# Not part of any binary's deploy: the board has no RTC and no reachable time
+# source on the direct link, so its clock is whatever the last push left.
+set-clock:
+	./tools/set-clock.sh
 
 deploy-uxplay: build/uxplay_debug
 	./tools/deploy-artifact.sh $< /usr/local/bin/uxplay_debug uxplay.service

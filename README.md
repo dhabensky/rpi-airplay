@@ -208,14 +208,16 @@ make uxplay
 ## Deploying to an already-provisioned Pi
 
 ```bash
-make deploy                 # every binary the image ships
+make deploy                 # the clock plus every binary the image ships
 make deploy-uxplay-menu     # just one (see the Makefile for the other five)
+make set-clock              # just the clock (the device has no RTC)
 ```
 
 Builds whatever is stale through the same file targets `make image` uses,
-pushes each binary through `tools/pissh`, and prints the `sha256` it
-verified on the device. Only the unit that runs the pushed binary is
-restarted — `uxplay.service` for `uxplay_debug` and `log-ts`,
+pushes the host's clock (`tools/set-clock.sh`, so nothing restarts into a
+wrong journal timestamp) and then each binary through `tools/pissh`, and
+prints the `sha256` it verified on the device. Only the unit that runs the
+pushed binary is restarted — `uxplay.service` for `uxplay_debug` and `log-ts`,
 `uxplay-menu.service` for `uxplay-menu`, nothing for `menu-render`,
 `drmdump` or `synthetic-client` — and a binary the device already has
 byte-identical is skipped, restart included, since restarting
