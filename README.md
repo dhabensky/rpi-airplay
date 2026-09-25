@@ -11,9 +11,10 @@ surviving seeks — does.
 
 ## Repo layout
 
-- `PROGRESS.md` — narrative debugging/decision log for the whole project
+- `PROGRESS.md` — narrative debugging/decision log, current period only
   (start here to understand *why* things are the way they are; this
-  README covers *what* and *how to reproduce*).
+  README covers *what* and *how to reproduce*). Earlier periods are
+  verbatim under `docs/archive/PROGRESS-<from>--<to>.md`.
 - `docs/` — reference documentation describing only the *current* state
   (threading/locking maps, pipeline construction, test framework, etc. —
   see `docs/README.md` for the index). `docs/bugs/` holds one file per
@@ -77,9 +78,11 @@ surviving seeks — does.
   (idempotent, safe to re-run), and `deploy.sh` builds and pushes just the
   `uxplay_debug` binary to a Pi that's already set up — the fast path for
   iterating without a reflash.
-- `REBUILD-STATUS.md` — one dated entry per `make verify` run, with every
-  Tier A/B/C delta either fixed or explicitly justified. Read the latest
-  entry before assuming a build matches the live Pi.
+- `REBUILD-STATUS.md` — tier definitions plus the newest dated entries,
+  one per `make verify` run, with every Tier A/B/C delta either fixed or
+  explicitly justified. Read the latest entry before assuming a build
+  matches the live Pi. Older runs are verbatim under
+  `docs/archive/REBUILD-STATUS-<from>--<to>.md`.
 
 ## Hardware / network facts
 
@@ -354,9 +357,10 @@ resize plus one automatic reboot on the very first boot; that's normal,
 not a failure. Once that settles and WiFi/Ethernet comes up,
 `systemctl status uxplay` should show it running. SSH access is via
 dropbear (DietPi's default) with the same root/password auth this project
-has always used — see `REBUILD-STATUS.md`'s openssh-vs-dropbear note for
-why. See `PROGRESS.md` for functional verification (AirPlay discovery,
-A/V sync).
+has always used — see the openssh-vs-dropbear note in
+`docs/archive/REBUILD-STATUS-2026-09-08--2026-09-09.md` for why. See
+`PROGRESS.md` and its `docs/archive/` predecessors for functional
+verification (AirPlay discovery, A/V sync).
 
 ## Known gaps (read before treating this as fully reproducible)
 
@@ -395,11 +399,11 @@ A/V sync).
    from either could in principle still disappear from the pool itself,
    not just the index, over a long enough horizon.
 3. **The systemd unit's `ExecStart` embeds hand-tuned pipeline flags**
-   (`kmssink force-modesetting=true qos=false ts-offset=300000000`,
-   `-vd v4l2h264dec -vc identity`) that came from extensive empirical
-   tuning documented in `PROGRESS.md`, not from anything self-evident
-   in the code — don't "simplify" these without reading that history
-   first.
+   (`kmssink qos=false ts-offset=300000000`, `-vd v4l2h264dec -vc
+   identity`) that came from extensive empirical tuning documented in
+   `docs/archive/PROGRESS-2026-09-06--2026-09-12.md` (the A/V-sync and
+   `force-modesetting` entries), not from anything self-evident in the
+   code — don't "simplify" these without reading that history first.
 4. **Tier D (an actual flash + boot + AirPlay session) is the only
    remaining unverified step in `REBUILD-STATUS.md`.** Package manifest,
    file-tree content, and binary-exact checks (Tiers A–C) all pass or
