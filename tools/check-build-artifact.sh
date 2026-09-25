@@ -1,6 +1,7 @@
 #!/bin/bash
 # Asserts a binary a Docker build was supposed to write actually landed on
 # the host, so a caller can't hand a 0-byte file to whatever comes next.
+# Shared by every build script and Makefile rule that produces a binary.
 # Usage: tools/check-build-artifact.sh <path>
 set -euo pipefail
 
@@ -16,9 +17,16 @@ else
   exit 0
 fi
 
-# Docker shares $HOME into its VM but not macOS /tmp, so a bind mount under
-# /tmp leaves the host path untouched while the container still exits 0.
 echo "ERROR: build artifact $reason: $path" >&2
-echo "  A Docker build only reaches paths the VM shares with the host --" >&2
-echo "  build into this repo's own build/ directory, never macOS /tmp." >&2
+if [ "$reason" = "missing" ]; then
+  echo "  Either the build never produced it, or it went somewhere the host" >&2
+  echo "  cannot see." >&2
+else
+  echo "  A Docker build only reaches paths the VM shares with the host." >&2
+fi
+echo "  Build into this repo's own build/ directory: any temp dir outside the" >&2
+echo "  repo (mktemp -d's /var/folders/..., /tmp) may not be shared." >&2
+# Leave nothing behind that a later step could mistake for a build result --
+# tools/pytest's uxplay_binary fixture reuses whatever exists at its path.
+rm -rf -- "$path"
 exit 1
