@@ -216,6 +216,18 @@ byte-identical is skipped, restart included, since restarting
 `uxplay.service` drops a live mirroring session. `make deploy DRY_RUN=1`
 prints what each step would do and touches no network.
 
+## Test suites
+
+```bash
+make unit-tests   # UxPlay/tests + tools/tests, inside the build container
+make pytest       # the tools/pytest/ suite (bootstraps its own venv)
+```
+
+`make pytest` leaves out the tests marked `pi_hardware`, which need the
+live device; `make pytest PYTEST_MARK=` runs those too, and `PYTEST_ARGS`
+passes anything else through (`-v`, `-k …`). `docs/testing.md` describes
+what each suite covers.
+
 ## Building and flashing a complete image
 
 `make image` builds a complete, ready-to-flash `build/rpi-airplay.img`

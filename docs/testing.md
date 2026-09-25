@@ -76,10 +76,11 @@ only whether it's dispatched to the pipeline with correct timing (see
 
 ## `tools/pytest/` — the e2e regression suite
 
-Requires: `tools/pytest-setup.sh` once (builds a project-local venv --
-Homebrew's system Python is externally-managed, PEP 668). Run with
-`tools/pytest/.venv/bin/pytest tools/pytest/ -v`, or `-m "not
-pi_hardware"` to skip everything needing the real device.
+Run with `make pytest`, which bootstraps the project-local venv
+(`tools/pytest-setup.sh` -- Homebrew's system Python is externally-managed,
+PEP 668) and skips everything needing the real device. `make pytest
+PYTEST_MARK=` includes those, `PYTEST_ARGS` passes flags through (`-v`,
+`-k ...`).
 
 Replaced the old `tools/test-*-e2e.sh` scripts (same coverage, same
 underlying mechanisms -- Docker `-threadtest`/`-ntpresynccheck`/

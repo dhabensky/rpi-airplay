@@ -62,6 +62,17 @@ base-image: build/dietpi-base.img
 unit-tests: Dockerfile $(shell find apt-lists -type f 2>/dev/null) $(shell find UxPlay/tests UxPlay/lib/raop_conn_policy.* UxPlay/renderers/audio_renderer.c tools/tests tools/uxplay-menu-parse.c tools/uxplay-menu-parse.h -type f 2>/dev/null)
 	./tools/run-unit-tests.sh
 
+# --- tools/pytest/ e2e suite ---
+# Bootstraps the venv (idempotent) and runs the suite. The default selection
+# leaves out the tests that need the live device; `make pytest PYTEST_MARK=`
+# runs those too, PYTEST_ARGS passes anything else through (-v, -k, a path).
+PYTEST_MARK ?= not pi_hardware
+PYTEST_ARGS ?=
+.PHONY: pytest
+pytest:
+	./tools/pytest-setup.sh
+	tools/pytest/.venv/bin/pytest tools/pytest/ $(if $(PYTEST_MARK),-m "$(PYTEST_MARK)",) $(PYTEST_ARGS)
+
 # --- uxplay binary (native arm64 via colima/Docker) ---
 # UxPlay/.git's mtime moves on any ordinary git command (measured: a plain
 # `git status` advanced it), which made every build stale; the submodule's
