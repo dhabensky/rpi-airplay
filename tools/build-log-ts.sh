@@ -29,4 +29,8 @@ docker run --rm \
     set -euo pipefail
     gcc -O2 -Wall -o /out/log-ts /mnt/tools/log-ts.c
   '
+
+# The container writes into /out and exits 0 even when $outdir is a path the
+# Docker VM doesn't share, leaving the host side empty.
+./tools/check-build-artifact.sh "$outdir_abs/log-ts"
 echo "Built $outdir/log-ts"

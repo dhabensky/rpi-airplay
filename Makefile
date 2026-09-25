@@ -74,21 +74,27 @@ build/synthetic-client: build/uxplay_debug
 	@{ [ -s $@ ] && [ ! $@ -ot $< ]; } || { echo "ERROR: $@ missing or older than $< after tools/build-uxplay.sh" >&2; exit 1; }
 
 # --- menu-render binary (native arm64 via colima/Docker) ---
+# Each of these rules asserts its own product: the build scripts mount an
+# output directory, so a path the Docker VM doesn't share leaves nothing here.
 build/bin/menu-render: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/menu-render.c tools/build-menu-render.sh
 	./tools/build-menu-render.sh build/bin
+	@./tools/check-build-artifact.sh $@
 
 # --- uxplay-menu binary (native arm64 via colima/Docker) ---
 build/bin/uxplay-menu: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/uxplay-menu.c tools/uxplay-menu-parse.c tools/uxplay-menu-parse.h tools/build-uxplay-menu.sh
 	./tools/build-uxplay-menu.sh build/bin
+	@./tools/check-build-artifact.sh $@
 
 # --- log-ts binary (native arm64 via colima/Docker) ---
 build/bin/log-ts: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/log-ts.c tools/build-log-ts.sh
 	./tools/build-log-ts.sh build/bin
+	@./tools/check-build-artifact.sh $@
 
 # --- drmdump binary (native arm64 via colima/Docker; build-drmdump.sh
 # also produces drmpaint, which is not shipped) ---
 build/bin/drmdump: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/drmdump.c tools/drmpaint.c tools/build-drmdump.sh
 	./tools/build-drmdump.sh build/bin
+	@./tools/check-build-artifact.sh $@
 
 # --- vendor GStreamer closure ---
 # Depends on a golden-reference package manifest to compute the delta

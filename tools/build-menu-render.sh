@@ -32,4 +32,8 @@ docker run --rm \
     set -euo pipefail
     gcc -O2 -Wall -o /out/menu-render /mnt/tools/menu-render.c $(pkg-config --cflags --libs gstreamer-1.0 gstreamer-app-1.0)
   '
+
+# The container writes into /out and exits 0 even when $outdir is a path the
+# Docker VM doesn't share, leaving the host side empty.
+./tools/check-build-artifact.sh "$outdir_abs/menu-render"
 echo "Built $outdir/menu-render"

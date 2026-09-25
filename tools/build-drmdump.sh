@@ -30,4 +30,9 @@ docker run --rm \
     gcc -O2 -Wall -o /out/drmdump /mnt/tools/drmdump.c $(pkg-config --cflags --libs libdrm)
     gcc -O2 -Wall -o /out/drmpaint /mnt/tools/drmpaint.c $(pkg-config --cflags --libs libdrm)
   '
+
+# The container writes into /out and exits 0 even when $outdir is a path the
+# Docker VM doesn't share, leaving the host side empty.
+./tools/check-build-artifact.sh "$outdir_abs/drmdump"
+./tools/check-build-artifact.sh "$outdir_abs/drmpaint"
 echo "Built $outdir/drmdump and $outdir/drmpaint"

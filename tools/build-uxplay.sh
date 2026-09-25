@@ -72,3 +72,7 @@ docker run --rm \
       echo "(no tools/synthetic-client.cpp target at this ref -- skipping)"
     fi
   '
+
+# The container can copy to /out/uxplay_debug and exit 0 while the host file
+# stays 0 bytes, if $out is on a path the Docker VM doesn't share.
+./tools/check-build-artifact.sh "$out_abs"

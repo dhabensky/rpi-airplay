@@ -30,4 +30,8 @@ docker run --rm \
     gcc -O2 -Wall -Wextra -Werror -o /out/uxplay-menu \
       /mnt/tools/uxplay-menu.c /mnt/tools/uxplay-menu-parse.c -I/mnt/tools
   '
+
+# The container writes into /out and exits 0 even when $outdir is a path the
+# Docker VM doesn't share, leaving the host side empty.
+./tools/check-build-artifact.sh "$outdir_abs/uxplay-menu"
 echo "Built $outdir/uxplay-menu"
