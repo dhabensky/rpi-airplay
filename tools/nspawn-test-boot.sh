@@ -105,7 +105,7 @@ fi
 # is WHY it failed: hitting the hardware boundary cleanly (no element
 # "v4l2h264dec"/DRM-KMS errors) is a PASS; anything else (missing shared
 # library, permission denied, wrong path) is a real regression.
-uxplay_log=$(sudo systemd-run -M "$MACHINE" --wait --pipe /bin/cat /var/log/uxplay.log 2>&1 || true)
+uxplay_log=$(sudo journalctl -M "$MACHINE" -u uxplay.service --no-pager 2>&1 || true)
 echo
 echo "=== uxplay_debug: how far did it get? ==="
 if echo "$uxplay_log" | grep -q "error while loading shared libraries"; then
@@ -159,9 +159,6 @@ sudo systemd-run -M "$MACHINE" --unit=nspawn-test-uxplay-sw --collect \
 sleep 3
 avahi_out=$(sudo systemd-run -M "$MACHINE" --wait --pipe bash -c \
   'apt-get update -qq >/dev/null 2>&1; apt-get install -y -qq avahi-utils >/dev/null 2>&1; timeout 5 avahi-browse -a -t' 2>&1 || true)
-# journalctl, not /var/log/uxplay.log -- that redirect is a directive on the
-# real uxplay.service unit, which doesn't apply to this transient unit; its
-# output only goes to the journal.
 sw_log=$(sudo journalctl -M "$MACHINE" -u nspawn-test-uxplay-sw --no-pager 2>&1 || true)
 sudo systemctl -M "$MACHINE" stop nspawn-test-uxplay-sw.service 2>&1 || true
 

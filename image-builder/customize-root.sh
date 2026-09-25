@@ -22,21 +22,20 @@
 # the host anymore -- inspect it via `docker run -v <volume>:/x ... find/stat`.)
 #
 # Usage: image-builder/customize-root.sh <root-dir> <vendor-gstreamer-dir> \
-#          <uxplay-debug-binary> <menu-render-binary> <log-ts-binary> \
-#          <drmdump-binary> <synthetic-client-binary> <uxplay-menu-binary> \
+#          <uxplay-debug-binary> <menu-render-binary> <drmdump-binary> \
+#          <synthetic-client-binary> <uxplay-menu-binary> \
 #          <files-dir> [personal-env-file]
 set -euo pipefail
 
-work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <menu-render-binary> <log-ts-binary> <drmdump-binary> <synthetic-client-binary> <uxplay-menu-binary> <files-dir> [personal-env-file]}"
+work="${1:?usage: $0 <root-dir> <vendor-gstreamer-dir> <uxplay-debug-binary> <menu-render-binary> <drmdump-binary> <synthetic-client-binary> <uxplay-menu-binary> <files-dir> [personal-env-file]}"
 vendor="${2:?}"
 uxplay_bin="${3:?}"
 menu_render_bin="${4:?}"
-log_ts_bin="${5:?}"
-drmdump_bin="${6:?}"
-synthetic_client_bin="${7:?}"
-uxplay_menu_bin="${8:?}"
-provfiles="${9:?}"
-personal_env="${10:-}"
+drmdump_bin="${5:?}"
+synthetic_client_bin="${6:?}"
+uxplay_menu_bin="${7:?}"
+provfiles="${8:?}"
+personal_env="${9:-}"
 
 # The Makefile mounts a persistent named volume directly at
 # $work/var/cache/apt/archives (via an extra `-v` flag on the `docker run`
@@ -253,9 +252,6 @@ install -m 0755 "$uxplay_bin" "$work/usr/local/bin/uxplay_debug"
 echo "==> Installing menu-render binary"
 install -m 0755 "$menu_render_bin" "$work/usr/local/bin/menu-render"
 
-echo "==> Installing log-ts binary (uxplay.service's ExecStart wrapper/timestamper)"
-install -m 0755 "$log_ts_bin" "$work/usr/local/bin/log-ts"
-
 echo "==> Installing uxplay-menu binary (uxplay-menu.service's ExecStart)"
 install -m 0755 "$uxplay_menu_bin" "$work/usr/local/bin/uxplay-menu"
 
@@ -326,14 +322,20 @@ echo "    direct-cable management channel independent of WiFi and DHCP)"
 ln -sf /etc/systemd/system/eth0-backup-ip.service \
   "$work/etc/systemd/system/multi-user.target.wants/eth0-backup-ip.service"
 
-echo "==> Enabling persistent journald logging (DietPi default is volatile --"
-echo "    /run tmpfs only, wiped on power-off -- learned the hard way when a"
-echo "    first-boot's console errors turned out to be unrecoverable from the"
-echo "    card afterwards)"
+echo "==> Enabling persistent journald logging (uxplay.service logs to the"
+echo "    journal, and a boot-sequence bug is only diagnosable if the journal"
+echo "    survives the reboot -- learned the hard way when a first-boot's"
+echo "    console errors turned out to be unrecoverable from the card)"
 # chroot for ownership: "systemd-journal" only resolves against the
 # target's /etc/group, not the outer container's (same class of bug as the
 # uxplay user above).
 chroot "$work" install -d -m 2755 -o root -g systemd-journal /var/log/journal
+# Storage=persistent means nothing while DietPi's RAMlog holds a tmpfs over
+# /var/log, so drop that tmpfs and the unit that repopulates it. The grep
+# asserts it: a silently no-op sed here brings the volatile journal back.
+grep -q '^tmpfs /var/log tmpfs ' "$work/etc/fstab"
+sed -i '\|^tmpfs /var/log tmpfs |d' "$work/etc/fstab"
+rm -f "$work/etc/systemd/system/multi-user.target.wants/dietpi-ramlog.service"
 
 echo "==> Trimming firmware to brcm/cypress (this Pi's actual WiFi/BT chip)"
 if [ -d "$work/usr/lib/firmware" ]; then

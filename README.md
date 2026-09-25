@@ -135,7 +135,7 @@ showing the WiFi IP. Checked offline by `make test-eth-backup`
 
 Two units own the AirPlay receiver and its screen:
 
-- **`uxplay.service`** — `uxplay_debug` itself, under `log-ts`. Reads
+- **`uxplay.service`** — `uxplay_debug` itself, logging to the journal. Reads
   `/etc/default/uxplay` for the display name only, exposes an overscan
   channel (`-ofifo /run/uxplay/overscan.fifo`) and a session-event channel
   (`-efifo /run/uxplay-events.fifo`, one `session-begin`/`session-end` line
@@ -179,12 +179,13 @@ the bad value and renders with its own default instead.
 
 ## On-device diagnostics (shipped in the image, nothing to deploy)
 
-- **`/var/log/uxplay.log` lines are timestamped** — UTC ISO-8601 with
-  millisecond resolution (`2026-09-22T01:39:45.894 ...`). `uxplay.service`'s
-  main process is `/usr/local/bin/log-ts` (`tools/log-ts.c`), which runs
-  `uxplay_debug`, timestamps its merged stdout+stderr and exits the way it
-  did. One log file, prefixed at the source; consumers grep unanchored
-  patterns, so the prefix is transparent to them.
+- **`journalctl -u uxplay.service`** — uxplay's merged stdout+stderr, with
+  journald's own timestamps, rotation and time filtering (`-f`, `-b`,
+  `-b -1`, `--since`). The journal is persistent
+  (`/etc/systemd/journald.conf.d/uxplay.conf`), so it survives the reboot
+  after a boot-sequence bug, and its rate limiting is off, so a `-d` burst
+  arrives complete. The device's clock has no RTC behind it — push it with
+  `make set-clock` before trusting a timestamp.
 - **`/usr/local/bin/drmdump`** — dumps live DRM plane/CRTC state and writes
   each on-screen plane's framebuffer to `/tmp/drmdump.plane<N>.raw`, or to
   `/tmp/drmdump.plane<N>.p<M>.raw` (one file per buffer) for a multi-buffer
@@ -209,7 +210,7 @@ make uxplay
 
 ```bash
 make deploy                 # the clock plus every binary the image ships
-make deploy-uxplay-menu     # just one (see the Makefile for the other five)
+make deploy-uxplay-menu     # just one (see the Makefile for the other four)
 make set-clock              # just the clock (the device has no RTC)
 ```
 
@@ -217,7 +218,7 @@ Builds whatever is stale through the same file targets `make image` uses,
 pushes the host's clock (`tools/set-clock.sh`, so nothing restarts into a
 wrong journal timestamp) and then each binary through `tools/pissh`, and
 prints the `sha256` it verified on the device. Only the unit that runs the
-pushed binary is restarted — `uxplay.service` for `uxplay_debug` and `log-ts`,
+pushed binary is restarted — `uxplay.service` for `uxplay_debug`,
 `uxplay-menu.service` for `uxplay-menu`, nothing for `menu-render`,
 `drmdump` or `synthetic-client` — and a binary the device already has
 byte-identical is skipped, restart included, since restarting

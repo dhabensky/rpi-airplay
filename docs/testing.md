@@ -53,8 +53,10 @@ PORT=$(ss -tlnp | grep uxplay_debug | awk '{print $4}' | sed 's/.*://' | sort -n
 ```
 
 The other modes need no fixture. Use `drmdump` (also shipped) to check what
-the session actually put on screen. `/var/log/uxplay.log` is timestamped
-(UTC, ms), so its lines correlate directly with anything else timestamped.
+the session actually put on screen. `journalctl -u uxplay.service` carries
+uxplay's own output with journald's timestamps, so its lines correlate
+directly with anything else timestamped — push the clock first
+(`make set-clock`), the device has no RTC.
 
 This is a standalone binary, not a flag baked into `uxplay.cpp` -- moved
 out entirely (see `docs/threadtest.md`) so the server under test is

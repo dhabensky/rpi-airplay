@@ -5,7 +5,7 @@
 # recipes under tools/ and image-builder/ -- this file is the dependency
 # graph and the one documented entry point, not where the actual logic
 # lives.
-.PHONY: image image-xz uxplay menu-render uxplay-menu log-ts drmdump synthetic-client \
+.PHONY: image image-xz uxplay menu-render uxplay-menu drmdump synthetic-client \
         vendor-gstreamer base-image golden-reference verify \
         reproducible-check refresh-base-image refresh-apt-lists refresh-buildenv-apt-lists \
         test-boot test-eth-backup test-resize clean
@@ -48,7 +48,6 @@ image: build/rpi-airplay.img
 uxplay: build/uxplay_debug
 menu-render: build/bin/menu-render
 uxplay-menu: build/bin/uxplay-menu
-log-ts: build/bin/log-ts
 drmdump: build/bin/drmdump
 synthetic-client: build/synthetic-client
 vendor-gstreamer: build/vendor-gstreamer/MANIFEST.md
@@ -100,11 +99,6 @@ build/bin/uxplay-menu: Dockerfile $(shell find apt-lists -type f 2>/dev/null) to
 	./tools/build-uxplay-menu.sh build/bin
 	@./tools/check-build-artifact.sh $@
 
-# --- log-ts binary (native arm64 via colima/Docker) ---
-build/bin/log-ts: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/log-ts.c tools/build-log-ts.sh
-	./tools/build-log-ts.sh build/bin
-	@./tools/check-build-artifact.sh $@
-
 # --- drmdump binary (native arm64 via colima/Docker; build-drmdump.sh
 # also produces drmpaint, which is not shipped) ---
 build/bin/drmdump: Dockerfile $(shell find apt-lists -type f 2>/dev/null) tools/drmdump.c tools/drmpaint.c tools/build-drmdump.sh
@@ -134,7 +128,7 @@ build/dietpi-base.img: image-builder/BASE-IMAGE.env image-builder/fetch-base.sh
 # rebuild iteration for a file that's never actually downloaded/distributed
 # in that form. See `image-xz` below if a compressed copy is ever actually
 # needed (e.g. to archive/share a specific build).
-build/rpi-airplay.img: build/uxplay_debug build/bin/menu-render build/bin/uxplay-menu build/bin/log-ts \
+build/rpi-airplay.img: build/uxplay_debug build/bin/menu-render build/bin/uxplay-menu \
                           build/bin/drmdump build/synthetic-client \
                           build/vendor-gstreamer/MANIFEST.md build/dietpi-base.img \
                           $(shell find image-builder/files -type f) \
@@ -159,14 +153,13 @@ build/rpi-airplay.img: build/uxplay_debug build/bin/menu-render build/bin/uxplay
 	  -v "$$PWD/build/uxplay_debug":/uxplay_debug:ro \
 	  -v "$$PWD/build/bin/menu-render":/menu-render:ro \
 	  -v "$$PWD/build/bin/uxplay-menu":/uxplay-menu:ro \
-	  -v "$$PWD/build/bin/log-ts":/log-ts:ro \
 	  -v "$$PWD/build/bin/drmdump":/drmdump:ro \
 	  -v "$$PWD/build/synthetic-client":/synthetic-client:ro \
 	  -v "$$PWD/image-builder/files":/provfiles:ro \
 	  -v "$$PWD/image-builder":/image-builder:ro \
 	  -v $(APT_CACHE_VOLUME):/rootdir/var/cache/apt/archives \
 	  $(if $(PERSONAL_ENV),-v "$$PWD/personal.env":/personal.env:ro,) \
-	  $(BUILDENV_TAG) bash /image-builder/customize-root.sh /rootdir /vendor /uxplay_debug /menu-render /log-ts /drmdump /synthetic-client /uxplay-menu /provfiles $(if $(PERSONAL_ENV),/personal.env,)
+	  $(BUILDENV_TAG) bash /image-builder/customize-root.sh /rootdir /vendor /uxplay_debug /menu-render /drmdump /synthetic-client /uxplay-menu /provfiles $(if $(PERSONAL_ENV),/personal.env,)
 	docker run --rm \
 	  -v $(DIETPI_BOOT_VOLUME):/dietpi-boot \
 	  -v "$$PWD/image-builder":/image-builder:ro \
@@ -201,14 +194,14 @@ image-xz: build/rpi-airplay.img
 # common one). A push whose sha256 already matches the device is skipped,
 # restart included. DRY_RUN=1 prints each plan and touches no network.
 .PHONY: deploy set-clock deploy-uxplay deploy-uxplay-menu deploy-menu-render \
-        deploy-log-ts deploy-drmdump deploy-synthetic-client
+        deploy-drmdump deploy-synthetic-client
 export DRY_RUN
 
 # The clock push comes first, so the restarted units stamp their journal
 # records with the real time; the two that restart a unit come last, so they
 # come back up against a fully updated set of binaries.
 deploy: set-clock deploy-menu-render deploy-drmdump deploy-synthetic-client \
-        deploy-uxplay-menu deploy-log-ts deploy-uxplay
+        deploy-uxplay-menu deploy-uxplay
 
 # Not part of any binary's deploy: the board has no RTC and no reachable time
 # source on the direct link, so its clock is whatever the last push left.
@@ -217,11 +210,6 @@ set-clock:
 
 deploy-uxplay: build/uxplay_debug
 	./tools/deploy-artifact.sh $< /usr/local/bin/uxplay_debug uxplay.service
-
-# log-ts is uxplay.service's ExecStart (it runs uxplay_debug), so a new one
-# only takes effect when that unit restarts.
-deploy-log-ts: build/bin/log-ts
-	./tools/deploy-artifact.sh $< /usr/local/bin/log-ts uxplay.service
 
 deploy-uxplay-menu: build/bin/uxplay-menu
 	./tools/deploy-artifact.sh $< /usr/local/bin/uxplay-menu uxplay-menu.service

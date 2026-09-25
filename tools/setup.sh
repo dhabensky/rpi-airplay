@@ -77,9 +77,18 @@ install -m 0644 -t /usr/lib/aarch64-linux-gnu \
   ../build/vendor-gstreamer/libs/*
 ldconfig
 
-echo "==> Enabling persistent journald logging (DietPi default is volatile --"
-echo "    /run tmpfs only, wiped on power-off)"
-install -d -m 2755 -o root -g systemd-journal /var/log/journal
+echo "==> Enabling persistent journald logging with rate limiting off (uxplay"
+echo "    logs to the journal, so it has to survive the reboot after a bug)."
+echo "    DietPi's RAMlog tmpfs over /var/log would make Storage=persistent a"
+echo "    no-op, so it goes, along with the unit that repopulates it."
+install -d /etc/systemd/journald.conf.d
+install -m 0644 ../image-builder/files/etc/systemd/journald.conf.d/uxplay.conf \
+  /etc/systemd/journald.conf.d/uxplay.conf
+sed -i '\|^tmpfs /var/log tmpfs |d' /etc/fstab
+systemctl disable dietpi-ramlog.service 2>/dev/null || true
+# journald creates /var/log/journal itself once that tmpfs is gone, which
+# needs the reboot below -- unmounting a live /var/log here would only hide
+# it from processes that already hold fds in it.
 
 echo "==> Enabling the bcm2835 hardware H.264 decoder (DietPi blacklists it by default)"
 rm -f /etc/modprobe.d/dietpi-disable_rpi_codec.conf
@@ -148,13 +157,11 @@ cat <<'EOF'
 
 ==> Done. Remaining manual steps:
     1. Build the receiver binary: see ../README.md "Building the uxplay_debug binary".
-    2. Copy it to /usr/local/bin/uxplay_debug on this Pi, plus `make log-ts`'s
-       build/bin/log-ts to /usr/local/bin/log-ts -- the ExecStart in
-       ../image-builder/files/etc/systemd/system/uxplay.service runs uxplay_debug
-       under it to timestamp /var/log/uxplay.log, and won't start without it --
-       and `make uxplay-menu`'s build/bin/uxplay-menu to /usr/local/bin/uxplay-menu
+    2. Copy it to /usr/local/bin/uxplay_debug on this Pi, plus
+       `make uxplay-menu`'s build/bin/uxplay-menu to /usr/local/bin/uxplay-menu
        (uxplay-menu.service's ExecStart), plus `make menu-render`'s
        build/bin/menu-render to /usr/local/bin/menu-render.
-    3. If this is the first time bcm2835-codec was loaded, reboot once.
+    3. Reboot once: that is what moves /var/log off DietPi's RAMlog tmpfs,
+       and bcm2835-codec may also be loading for the first time.
     4. systemctl start uxplay.service
 EOF

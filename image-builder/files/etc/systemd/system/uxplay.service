@@ -8,8 +8,6 @@ Wants=network-online.target time-sync.target
 Wants=uxplay-menu.service
 
 [Service]
-StandardOutput=append:/var/log/uxplay.log
-StandardError=append:/var/log/uxplay.log
 LimitCORE=infinity
 WorkingDirectory=/home/uxplay
 Environment=HOME=/home/uxplay
@@ -19,10 +17,12 @@ User=uxplay
 RuntimeDirectory=uxplay
 EnvironmentFile=-/etc/default/uxplay
 ExecStartPre=/usr/local/bin/zero-fb0
-# log-ts is the main process: it timestamps uxplay_debug's merged output into
-# /var/log/uxplay.log and then exits exactly as its child did, so a dead
-# timestamper fails the unit instead of leaving it alive but mute.
-ExecStart=/usr/local/bin/log-ts -- /usr/bin/stdbuf -oL -eL /usr/local/bin/uxplay_debug -vd v4l2h264dec -vc identity -srgb no -n "${UXPLAY_DISPLAY_NAME}" -reset 60 -vs "kmssink qos=false ts-offset=300000000" -as "alsasink device=plughw:vc4hdmi,0" -ofifo /run/uxplay/overscan.fifo -efifo /run/uxplay-events.fifo
+# Without this the journal tags every line "stdbuf", after the wrapper.
+SyslogIdentifier=uxplay_debug
+# stdbuf execs uxplay_debug rather than wrapping it, so uxplay_debug itself is
+# the main process systemd watches: a shell or a filter here would keep the
+# unit "active" after uxplay_debug died. Output goes to the journal.
+ExecStart=/usr/bin/stdbuf -oL -eL /usr/local/bin/uxplay_debug -vd v4l2h264dec -vc identity -srgb no -n "${UXPLAY_DISPLAY_NAME}" -reset 60 -vs "kmssink qos=false ts-offset=300000000" -as "alsasink device=plughw:vc4hdmi,0" -ofifo /run/uxplay/overscan.fifo -efifo /run/uxplay-events.fifo
 Restart=on-failure
 RestartSec=3
 
